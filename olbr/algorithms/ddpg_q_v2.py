@@ -21,8 +21,8 @@ def hard_update(target, source):
 
 class DDPG_BD(object):
     def __init__(self, observation_space, action_space, optimizer, Actor, Critic, loss_func, gamma, tau, out_func=K.sigmoid,
-                 discrete=True, regularization=False, normalized_rewards=False, agent_id=0, object_Qfunc=None, backward_dyn=None, 
-                 object_policy=None, reward_fun=None, clip_Q_neg=None,
+                 discrete=True, regularization=False, normalized_rewards=False, agent_id=0, object_Qfunc=[], object_inverse=[], 
+                 object_policy=[], reward_fun=None, clip_Q_neg=None,
                  dtype=K.float32, device="cuda"):
 
         super(DDPG_BD, self).__init__()
@@ -44,6 +44,7 @@ class DDPG_BD(object):
         self.agent_id = agent_id
         self.object_Qfunc = object_Qfunc
         self.object_policy = object_policy
+        self.object_inverse = object_inverse
         self.clip_Q_neg = clip_Q_neg if clip_Q_neg is not None else -1./(1.-self.gamma)
 
         # model initialization
@@ -85,26 +86,10 @@ class DDPG_BD(object):
         self.entities.extend(self.critics_target)
         self.entities.extend(self.critics_optim)
 
-        # backward dynamics model
-        if backward_dyn is None:
-            self.backward = BackwardDyn(observation_space, action_space[1]).to(device)
-            self.backward_optim = optimizer(self.backward.parameters(), lr = critic_lr)
-            self.entities.append(self.backward)
-            self.entities.append(self.backward_optim)
-        else:
-            self.backward = backward_dyn
-            self.backward.eval()
-            self.entities.append(self.backward)
-
-        # Learnt Q function for object
-        if self.object_Qfunc is not None:
-            self.object_Qfunc.eval()
-            self.entities.append(self.object_Qfunc)
-
-        # Learnt policy for object
-        if self.object_policy is not None:
-            self.object_policy.eval()
-            self.entities.append(self.object_policy)
+        # Add object functions to entities
+        for entity in [*self.object_Qfunc, *self.object_policy, *self.object_inverse]:
+            entity.eval()
+            self.entities.append(entity)
 
         if reward_fun is not None:
             self.get_obj_reward = reward_fun
@@ -156,26 +141,26 @@ class DDPG_BD(object):
         s2_ = K.cat([K.tensor(batch['o_2'], dtype=self.dtype, device=self.device)[:, observation_space:],
                      K.tensor(batch['g'], dtype=self.dtype, device=self.device)], dim=-1)
         
+        s, s_ = [], []
         if normalizer[0] is not None:
-            s1 = normalizer[0].preprocess(s1)
-            s1_ = normalizer[0].preprocess(s1_)
+            s.append(normalizer[0].preprocess(s1))
+            s_.append(normalizer[0].preprocess(s1_))
 
-        if normalizer[1] is not None:
-            s2 = normalizer[1].preprocess(s2)
-            s2_ = normalizer[1].preprocess(s2_)
+        for i in range(1, len(self.object_Qfunc)+1):
+            if normalizer[i] is not None:
+                s.append(normalizer[i].preprocess(s2))
+                s_.append(normalizer[i].preprocess(s2_))
 
-        s, s_, a = (s1, s1_, a1) if self.agent_id == 0 else (s2, s2_, a2)
-        a_ = self.actors_target[0](s_)
+        r = K.tensor(batch['r'], dtype=self.dtype, device=self.device).unsqueeze(1)
+        r_intr = []
+        for i in range(1, len(self.object_Qfunc)+1):
+            r_intr.append(self.get_obj_reward(s[i], s_[i]))
 
-        if self.object_Qfunc is None:
-            r = K.tensor(batch['r'], dtype=self.dtype, device=self.device).unsqueeze(1)
-        else:
-            r = K.tensor(batch['r'], dtype=self.dtype, device=self.device).unsqueeze(1)
-            r_intr = self.get_obj_reward(s2, s2_)
-
+        for i in range(0, len(self.object_Qfunc)+1):
+            a_ = self.actors_target[0](s_[0])
         # first critic for main rewards
-        Q = self.critics[0](s, a)       
-        V = self.critics_target[0](s_, a_).detach()
+        Q = self.critics[0](s, a1)       
+        V = self.critics_target[0](s1_, a1_).detach()
 
         target_Q = (V * self.gamma) + r
         target_Q = target_Q.clamp(self.clip_Q_neg, 0.)
