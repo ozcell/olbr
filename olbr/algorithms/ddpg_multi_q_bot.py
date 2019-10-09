@@ -146,7 +146,7 @@ class DDPG_BD(object):
 
         return mu
 
-    def update_parameters(self, batch, normalizer=None):
+    def update_parameters(self, batch, normalizer=None, critic_masks=None):
 
         observation_space = self.observation_space - K.tensor(batch['g'], dtype=self.dtype, device=self.device).shape[1]
         action_space = self.action_space[0].shape[0]
@@ -262,8 +262,10 @@ class DDPG_BD(object):
         a = self.actors[0](s)
 
         loss_actor = -self.critics[0](s, a).mean()
+        pdb.set_trace()
         for i_critic in range(1,self.n_aux_critics+1):
-            loss_actor += -self.critics[i_critic](s, a).mean()
+            if critic_masks is not None:
+                loss_actor += -self.critics[i_critic](s, a).mean()*critic_masks[i_critic-1]
 
         if self.regularization:
             loss_actor += (self.actors[0](s)**2).mean()*1

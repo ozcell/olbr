@@ -13,7 +13,6 @@ import gym_wmgds as gym
 
 from olbr.algorithms.ddpg_multi_q_bot import DDPG_BD
 #from olbr.algorithms.ddpg_multi_q_bot_v2 import DDPG_BD
-from olbr.algorithms.maddpg import MADDPG_BD
 from olbr.experience import Normalizer
 from olbr.exploration import Noise
 from olbr.utils import Saver, Summarizer, get_params, running_mean, get_obj_obs, get_rob_obs
