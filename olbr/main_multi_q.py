@@ -65,7 +65,8 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
                                     observe_obj_grp=config['observe_obj_grp'],
                                     obj_range=config['obj_range'])
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', config['train_stack_prob']) for i_env in range(N_ENVS)])
-        envs_test = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', config['test_stack_prob']) for i_env in range(N_ENVS)])        
+        envs_test = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', config['test_stack_prob']) for i_env in range(N_ENVS)])
+        envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', config['test_stack_prob']) for i_env in range(1)])         
         n_rob_actions = 4
         n_actions = config['max_nb_objects'] * len(config['obj_action_type']) + n_rob_actions
     elif 'Fetch' in ENV_NAME and 'Multi' in ENV_NAME:
@@ -133,7 +134,7 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
     if config['agent_alg'] == 'DDPG_BD':
         MODEL = DDPG_BD
         from olbr.replay_buffer import ReplayBuffer
-        from olbr.her_sampler import make_sample_her_transitions
+        from olbr.her_sampler import make_sample_her_transitions 
     elif config['agent_alg'] == 'MADDPG_BD':
         MODEL = MADDPG_BD
         from olbr.replay_buffer import ReplayBuffer_v2 as ReplayBuffer
@@ -195,7 +196,7 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
         }
     memory = ReplayBuffer(buffer_shapes, MEM_SIZE, config['episode_length'], sample_her_transitions)
 
-    experiment_args = ((envs,envs_test), memory, noise, config, normalizer, agent_id)
+    experiment_args = ((envs,envs_test,envs_render), memory, noise, config, normalizer, agent_id)
          
     return model, experiment_args
 
@@ -339,7 +340,7 @@ def run(model, experiment_args, train=True):
     total_time_start =  time.time()
 
     env, memory, noise, config, normalizer, _ = experiment_args
-    env, test_env = env
+    env, test_env, render_env = env
     if test_env is None:
         test_env = env
     
@@ -400,11 +401,14 @@ def run(model, experiment_args, train=True):
         episode_succeess_cycle = []
         rollout_per_env = N_TEST_ROLLOUTS // config['n_envs']
         for i_rollout in range(rollout_per_env):
-            render = config['render'] > 0 and i_episode % config['render'] == 0
+            render = config['render'] == 2 and i_episode % config['render'] == 0
             _, episode_reward, success, _ = rollout(test_env, model, False, config, normalizer=normalizer, render=render)
                 
             episode_reward_cycle.extend(episode_reward)
             episode_succeess_cycle.extend(success)
+        for i_rollout in range(10):
+            render = config['render'] == 1 and i_episode % config['render'] == 0
+            _, _, _, _ = rollout(render_env, model, False, config, normalizer=normalizer, render=render)
         # <-- end loop: i_rollout 
             
         ### MONITORIRNG ###
