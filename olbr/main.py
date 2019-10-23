@@ -75,7 +75,7 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
     elif 'HandManipulate' in ENV_NAME and 'Multi' in ENV_NAME:
         dummy_env = gym.make(ENV_NAME, obj_action_type=config['obj_action_type'])
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Hand', agent == 'object') for i_env in range(N_ENVS)])
-        envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Hand', agent == 'object') for i_env in range(N_ENVS)])
+        envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Hand', agent == 'object') for i_env in range(1)])
         n_rob_actions = 20
         n_actions = 1 * len(config['obj_action_type']) + n_rob_actions
     else:
