@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 import gym_wmgds as gym
 
-from olbr.algorithms.ddpg_q import DDPG_BD
+from olbr.algorithms.ddpg_q_v2 import DDPG_BD
 from olbr.experience import Normalizer, RunningMean
 from olbr.exploration import Noise
 from olbr.utils import Saver, Summarizer, get_params
@@ -29,7 +29,7 @@ device = K.device("cuda" if K.cuda.is_available() else "cpu")
 dtype = K.float32
 
 def init(config, agent='robot', her=False, object_Qfunc=None, 
-                                           backward_dyn=None, 
+                                           object_inverse=None, 
                                            object_policy=None, 
                                            reward_fun=None):
         
@@ -129,13 +129,13 @@ def init(config, agent='robot', her=False, object_Qfunc=None,
     model = MODEL(observation_space, action_space, optimizer, 
                   Actor, Critic, loss_func, GAMMA, TAU, out_func=OUT_FUNC, discrete=False, 
                   regularization=REGULARIZATION, normalized_rewards=NORMALIZED_REWARDS,
-                  agent_id=agent_id, object_Qfunc=object_Qfunc, backward_dyn=backward_dyn, 
+                  agent_id=agent_id, object_Qfunc=object_Qfunc, object_inverse=object_inverse, 
                   object_policy=object_policy, reward_fun=reward_fun, clip_Q_neg=clip_Q_neg,
                   )
 
     normalizer = []
     for _ in range(len(model.object_Qfunc)+1):
-        normalizer.append(Normalizer)
+        normalizer.append(Normalizer())
 
     for _ in range(1):
         state_all = dummy_env.reset()
@@ -240,8 +240,12 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
         
         # Observation normalization
         next_obs_goal = []
-        for i_agent in range(2):
-            next_obs_goal.append(K.cat([next_obs[i_agent], goal], dim=-1))
+        next_obs_goal.append(K.cat([next_obs[0], goal], dim=-1))
+        if normalizer[0] is not None:
+            next_obs_goal[0] = normalizer[0].preprocess(next_obs_goal[0])
+
+        for i_agent in range(1, len(model.object_Qfunc)+1):
+            next_obs_goal.append(K.cat([next_obs[1], goal], dim=-1))
             if normalizer[i_agent] is not None:
                 next_obs_goal[i_agent] = normalizer[i_agent].preprocess(next_obs_goal[i_agent])
 
