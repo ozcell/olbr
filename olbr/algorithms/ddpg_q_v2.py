@@ -69,18 +69,13 @@ class DDPG_BD(object):
         self.critics = []
         self.critics_target = []
         self.critics_optim = []
-        
-        self.critics.append(Critic(observation_space, action_space[agent_id]).to(device))
-        self.critics_target.append(Critic(observation_space, action_space[agent_id]).to(device))
-        self.critics_optim.append(optimizer(self.critics[0].parameters(), lr = critic_lr))
 
-        hard_update(self.critics_target[0], self.critics[0])
+        for i in range(len(object_Qfunc)+1):
+            self.critics.append(Critic(observation_space, action_space[agent_id]).to(device))
+            self.critics_target.append(Critic(observation_space, action_space[agent_id]).to(device))
+            self.critics_optim.append(optimizer(self.critics[i].parameters(), lr = critic_lr))
 
-        self.critics.append(Critic(observation_space, action_space[agent_id]).to(device))
-        self.critics_target.append(Critic(observation_space, action_space[agent_id]).to(device))
-        self.critics_optim.append(optimizer(self.critics[1].parameters(), lr = critic_lr))
-
-        hard_update(self.critics_target[1], self.critics[1])
+            hard_update(self.critics_target[i], self.critics[i])
             
         self.entities.extend(self.critics)
         self.entities.extend(self.critics_target)
@@ -134,63 +129,59 @@ class DDPG_BD(object):
                     K.tensor(batch['g'], dtype=self.dtype, device=self.device)], dim=-1)
 
         a1 = K.tensor(batch['u'], dtype=self.dtype, device=self.device)[:, 0:action_space]
-        a2 = K.tensor(batch['u'], dtype=self.dtype, device=self.device)[:, action_space:]
 
         s1_ = K.cat([K.tensor(batch['o_2'], dtype=self.dtype, device=self.device)[:, 0:observation_space],
                      K.tensor(batch['g'], dtype=self.dtype, device=self.device)], dim=-1)
         s2_ = K.cat([K.tensor(batch['o_2'], dtype=self.dtype, device=self.device)[:, observation_space:],
                      K.tensor(batch['g'], dtype=self.dtype, device=self.device)], dim=-1)
         
-        s, s_ = [], []
+        s, s_, a = [], [], a1
         if normalizer[0] is not None:
             s.append(normalizer[0].preprocess(s1))
             s_.append(normalizer[0].preprocess(s1_))
+        else:
+            s.append(s1)
+            s_.append(s1_)
 
-        for i in range(1, len(self.object_Qfunc)+1):
-            if normalizer[i] is not None:
-                s.append(normalizer[i].preprocess(s2))
-                s_.append(normalizer[i].preprocess(s2_))
+        for i in range(len(self.object_Qfunc)):
+            if normalizer[i+1] is not None:
+                s.append(normalizer[i+1].preprocess(s2))
+                s_.append(normalizer[i+1].preprocess(s2_))
+            else:
+                s.append(s2)
+                s_.append(s2_)
 
+        r_all = []
         r = K.tensor(batch['r'], dtype=self.dtype, device=self.device).unsqueeze(1)
-        r_intr = []
-        for i in range(1, len(self.object_Qfunc)+1):
-            r_intr.append(self.get_obj_reward(s[i], s_[i]))
+        r_all.append(r)
+        for i in range(len(self.object_Qfunc)):
+            r_all.append(self.get_obj_reward(s[i+1], s_[i+1], i))
 
+        a_ = self.actors_target[0](s_[0])
         for i in range(0, len(self.object_Qfunc)+1):
-            a_ = self.actors_target[0](s_[0])
-        # first critic for main rewards
-        Q = self.critics[0](s, a1)       
-        V = self.critics_target[0](s1_, a1_).detach()
+            
+            # first critic for main rewards
+            Q = self.critics[i](s[0], a)       
+            V = self.critics_target[i](s_[0], a_).detach()
 
-        target_Q = (V * self.gamma) + r
-        target_Q = target_Q.clamp(self.clip_Q_neg, 0.)
+            target_Q = (V * self.gamma) + r_all[i]
+            target_Q = target_Q.clamp(self.clip_Q_neg, 0.)
 
-        loss_critic = self.loss_func(Q, target_Q)
+            loss_critic = self.loss_func(Q, target_Q)
 
-        self.critics_optim[0].zero_grad()
-        loss_critic.backward()
-        self.critics_optim[0].step()
-
-        # second critic for intrinsic
-        Q = self.critics[1](s, a)       
-        V = self.critics_target[1](s_, a_).detach()
-
-        target_Q = (V * self.gamma) + r_intr
-        target_Q = target_Q.clamp(self.clip_Q_neg, 0.)
-
-        loss_critic = self.loss_func(Q, target_Q)
-
-        self.critics_optim[1].zero_grad()
-        loss_critic.backward()
-        self.critics_optim[1].step()
+            self.critics_optim[i].zero_grad()
+            loss_critic.backward()
+            self.critics_optim[i].step()
 
         # actor update
-        a = self.actors[0](s)
+        a = self.actors[0](s[0])
 
-        loss_actor = -self.critics[0](s, a).mean() - self.critics[1](s, a).mean()
+        loss_actor = 0
+        for i in range(0, len(self.object_Qfunc)+1):
+            loss_actor += -self.critics[i](s[0], a).mean()
         
         if self.regularization:
-            loss_actor += (self.actors[0](s)**2).mean()*1
+            loss_actor += (self.actors[0](s[0])**2).mean()*1
 
         self.actors_optim[0].zero_grad()        
         loss_actor.backward()
@@ -204,12 +195,12 @@ class DDPG_BD(object):
         soft_update(self.critics_target[0], self.critics[0], self.tau)
         soft_update(self.critics_target[1], self.critics[1], self.tau)
 
-    def reward_fun(self, state, next_state):
+    def reward_fun(self, state, next_state, index=0):
         with K.no_grad():
-            action = self.backward(state.to(self.device), next_state.to(self.device))
-            opt_action = self.object_policy(state.to(self.device))
+            action = self.object_inverse[index](state.to(self.device), next_state.to(self.device))
+            opt_action = self.object_policy[index](state.to(self.device))
 
-            reward = self.object_Qfunc(state.to(self.device), action) - self.object_Qfunc(state.to(self.device), opt_action)
+            reward = self.object_Qfunc[index](state.to(self.device), action) - self.object_Qfunc[index](state.to(self.device), opt_action)
         return reward.clamp(min=-1.0, max=0.0)
 
 
