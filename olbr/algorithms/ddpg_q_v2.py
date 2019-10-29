@@ -192,8 +192,8 @@ class DDPG_BD(object):
     def update_target(self):
 
         soft_update(self.actors_target[0], self.actors[0], self.tau)
-        soft_update(self.critics_target[0], self.critics[0], self.tau)
-        soft_update(self.critics_target[1], self.critics[1], self.tau)
+        for i_critic in range(0, len(self.object_Qfunc)+1):
+            soft_update(self.critics_target[i_critic], self.critics[i_critic], self.tau)
 
     def reward_fun(self, state, next_state, index=0):
         with K.no_grad():
