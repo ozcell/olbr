@@ -86,12 +86,7 @@ class DDPG_BD(object):
         self.entities.extend(self.critics_optim)
 
         # backward dynamics model
-        if backward_dyn is None:
-            self.backward = BackwardDyn(observation_space, action_space[1]).to(device)
-            self.backward_optim = optimizer(self.backward.parameters(), lr = critic_lr)
-            self.entities.append(self.backward)
-            self.entities.append(self.backward_optim)
-        else:
+        if backward_dyn is not None:
             self.backward = backward_dyn
             self.backward.eval()
             self.entities.append(self.backward)
@@ -105,11 +100,6 @@ class DDPG_BD(object):
         if self.object_policy is not None:
             self.object_policy.eval()
             self.entities.append(self.object_policy)
-
-        if reward_fun is not None:
-            self.get_obj_reward = reward_fun
-        else:
-            self.get_obj_reward = self.reward_fun
 
         print('seperaate Qs')
 
@@ -145,39 +135,26 @@ class DDPG_BD(object):
         
         s1 = K.cat([K.tensor(batch['o'], dtype=self.dtype, device=self.device)[:, 0:observation_space],
                     K.tensor(batch['g'], dtype=self.dtype, device=self.device)], dim=-1)
-        s2 = K.cat([K.tensor(batch['o'], dtype=self.dtype, device=self.device)[:, observation_space:],
-                    K.tensor(batch['g'], dtype=self.dtype, device=self.device)], dim=-1)
 
         a1 = K.tensor(batch['u'], dtype=self.dtype, device=self.device)[:, 0:action_space]
-        a2 = K.tensor(batch['u'], dtype=self.dtype, device=self.device)[:, action_space:]
 
         s1_ = K.cat([K.tensor(batch['o_2'], dtype=self.dtype, device=self.device)[:, 0:observation_space],
                      K.tensor(batch['g'], dtype=self.dtype, device=self.device)], dim=-1)
-        s2_ = K.cat([K.tensor(batch['o_2'], dtype=self.dtype, device=self.device)[:, observation_space:],
-                     K.tensor(batch['g'], dtype=self.dtype, device=self.device)], dim=-1)
-        
         if normalizer[0] is not None:
             s1 = normalizer[0].preprocess(s1)
             s1_ = normalizer[0].preprocess(s1_)
 
-        if normalizer[1] is not None:
-            s2 = normalizer[1].preprocess(s2)
-            s2_ = normalizer[1].preprocess(s2_)
 
-        s, s_, a = (s1, s1_, a1) if self.agent_id == 0 else (s2, s2_, a2)
+        s, s_, a = s1, s1_, a1
         a_ = self.actors_target[0](s_)
 
-        if self.object_Qfunc is None:
-            r = K.tensor(batch['r'], dtype=self.dtype, device=self.device).unsqueeze(1)
-        else:
-            r = K.tensor(batch['r'], dtype=self.dtype, device=self.device).unsqueeze(1)
-            r_intr = self.get_obj_reward(s2, s2_)
+        r = K.tensor(batch['r'], dtype=self.dtype, device=self.device)
 
         # first critic for main rewards
         Q = self.critics[0](s, a)       
         V = self.critics_target[0](s_, a_).detach()
 
-        target_Q = (V * self.gamma) + r
+        target_Q = (V * self.gamma) + r[:,0:1]
         target_Q = target_Q.clamp(self.clip_Q_neg, 0.)
 
         loss_critic = self.loss_func(Q, target_Q)
@@ -190,7 +167,7 @@ class DDPG_BD(object):
         Q = self.critics[1](s, a)       
         V = self.critics_target[1](s_, a_).detach()
 
-        target_Q = (V * self.gamma) + r_intr
+        target_Q = (V * self.gamma) + r[:,1:2]
         target_Q = target_Q.clamp(self.clip_Q_neg, 0.)
 
         loss_critic = self.loss_func(Q, target_Q)
@@ -219,12 +196,5 @@ class DDPG_BD(object):
         soft_update(self.critics_target[0], self.critics[0], self.tau)
         soft_update(self.critics_target[1], self.critics[1], self.tau)
 
-    def reward_fun(self, state, next_state):
-        with K.no_grad():
-            action = self.backward(state.to(self.device), next_state.to(self.device))
-            opt_action = self.object_policy(state.to(self.device))
-
-            reward = self.object_Qfunc(state.to(self.device), action) - self.object_Qfunc(state.to(self.device), opt_action)
-        return reward.clamp(min=-1.0, max=0.0)
 
 

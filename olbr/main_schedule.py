@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 import gym_wmgds as gym
 
-from olbr.algorithms.ddpg import DDPG_BD
+from olbr.algorithms.ddpg_q_schedule import DDPG_BD
 from olbr.experience import Normalizer
 from olbr.exploration import Noise
 from olbr.utils import Saver, Summarizer, get_params, running_mean
@@ -86,14 +86,20 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Others', agent == 'object') for i_env in range(N_ENVS)])
         envs_render = None
 
-    def her_reward_fun(ag_2, g, info):  # vectorized
-        return dummy_env.compute_reward(achieved_goal=ag_2, desired_goal=g, info=info)
+ #   def her_reward_fun(ag_2, g, info):  # vectorized
+ #       return dummy_env.compute_reward(achieved_goal=ag_2, desired_goal=g, info=info)
 
+    def her_reward_fun(ag_2, g, info):  # vectorized
+        goal_len = ag_2.shape[1]//2
+        obj_rew = dummy_env.compute_reward(achieved_goal=ag_2[:,0:goal_len], desired_goal=g[:,0:goal_len], info=info)
+        rew = dummy_env.compute_reward(achieved_goal=ag_2[:,goal_len::], desired_goal=g[:,goal_len::], info=info)
+
+        return np.stack((obj_rew, rew), axis=-1)
 
     K.manual_seed(SEED)
     np.random.seed(SEED)
 
-    observation_space = dummy_env.observation_space.spaces['observation'].shape[1] + dummy_env.observation_space.spaces['desired_goal'].shape[0]
+    observation_space = dummy_env.observation_space.spaces['observation'].shape[1] + dummy_env.observation_space.spaces['desired_goal'].shape[0]*2
     action_space = (gym.spaces.Box(-1., 1., shape=(n_rob_actions,), dtype='float32'),
                     gym.spaces.Box(-1., 1., shape=(n_actions-n_rob_actions,), dtype='float32'),
                     gym.spaces.Box(-1., 1., shape=(n_actions,), dtype='float32'))
@@ -146,13 +152,13 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
             self.std = std
 
         def process(self, achieved, desired):
-            achieved -= K.tensor(self.mean[0], dtype=achieved.dtype, device=achieved.device)
-            achieved /= K.tensor(self.std[0], dtype=achieved.dtype, device=achieved.device)
+            achieved_out = achieved - K.tensor(self.mean[0], dtype=achieved.dtype, device=achieved.device)
+            achieved_out /= K.tensor(self.std[0], dtype=achieved.dtype, device=achieved.device)
 
-            desired -= K.tensor(self.mean[1], dtype=desired.dtype, device=desired.device)
-            desired /= K.tensor(self.std[1], dtype=desired.dtype, device=desired.device)
+            desired_out = desired - K.tensor(self.mean[1], dtype=desired.dtype, device=desired.device)
+            desired_out /= K.tensor(self.std[1], dtype=desired.dtype, device=desired.device)
 
-            return achieved, desired
+            return achieved_out, desired_out
 
     normalizer = [Normalizer(), Normalizer(), NormalizerObj(obj_mean, obj_std)]
 
@@ -167,15 +173,16 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
 
             obs = [K.tensor(obs, dtype=K.float32).unsqueeze(0) for obs in state_all['observation']]
             goal = K.tensor(state_all['desired_goal'], dtype=K.float32).unsqueeze(0)
-            achieved_goal = K.tensor(state_all['achieved_goal'], dtype=K.float32).unsqueeze(0)
+            if i_step%config['objtraj_goal_horizon'] == 0:
+                achieved_goal = K.tensor(state_all['achieved_goal'], dtype=K.float32).unsqueeze(0)
 
-            normed_achieved_goal, normed_goal = normalizer[2].process(achieved_goal, goal)
-            with K.no_grad():
-                objtraj_goal = model.obj_traj(normed_achieved_goal, normed_goal)
+                normed_achieved_goal, normed_goal = normalizer[2].process(achieved_goal, goal)
+                with K.no_grad():
+                    objtraj_goal = model.obj_traj(normed_achieved_goal, normed_goal)
 
             # Observation normalization
             obs_goal = []
-            obs_goal.append(K.cat([obs[agent_id], objtraj_goal], dim=-1))
+            obs_goal.append(K.cat([obs[agent_id], objtraj_goal, goal], dim=-1))
             if normalizer[agent_id] is not None:
                 obs_goal[0] = normalizer[agent_id].preprocess_with_update(obs_goal[0])
 
@@ -199,8 +206,8 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
 
     buffer_shapes = {
         'o' : (config['episode_length'], dummy_env.observation_space.spaces['observation'].shape[1]*2),
-        'ag' : (config['episode_length'], dummy_env.observation_space.spaces['achieved_goal'].shape[0]),
-        'g' : (config['episode_length'], dummy_env.observation_space.spaces['desired_goal'].shape[0]),
+        'ag' : (config['episode_length'], dummy_env.observation_space.spaces['achieved_goal'].shape[0]*2),
+        'g' : (config['episode_length'], dummy_env.observation_space.spaces['desired_goal'].shape[0]*2),
         'u' : (config['episode_length']-1, action_space[2].shape[0])
         }
     memory = ReplayBuffer(buffer_shapes, MEM_SIZE, config['episode_length'], sample_her_transitions)
@@ -240,16 +247,17 @@ def rollout(env, model, noise, config, normalizer=None, render=False, agent_id=0
 
         obs = [K.tensor(obs, dtype=K.float32) for obs in state_all['observation']]
         goal = K.tensor(state_all['desired_goal'], dtype=K.float32)
-        achieved_goal = K.tensor(state_all['achieved_goal'], dtype=K.float32)
+        if i_step%config['objtraj_goal_horizon'] == 0:
+            achieved_goal = K.tensor(state_all['achieved_goal'], dtype=K.float32)
 
-        normed_achieved_goal, normed_goal = normalizer[2].process(achieved_goal, goal)
-        with K.no_grad():
-            objtraj_goal = model.obj_traj(normed_achieved_goal, normed_goal)
+            normed_achieved_goal, normed_goal = normalizer[2].process(achieved_goal, goal)
+            with K.no_grad():
+                objtraj_goal = model.obj_traj(normed_achieved_goal, normed_goal)
         
         # Observation normalization
         obs_goal = []
         for i_agent in range(2):
-            obs_goal.append(K.cat([obs[i_agent], objtraj_goal], dim=-1))
+            obs_goal.append(K.cat([obs[i_agent], objtraj_goal, goal], dim=-1))
             if normalizer[i_agent] is not None:
                 obs_goal[i_agent] = normalizer[i_agent].preprocess_with_update(obs_goal[i_agent])
 
@@ -272,17 +280,17 @@ def rollout(env, model, noise, config, normalizer=None, render=False, agent_id=0
         reward = K.tensor(reward, dtype=dtype).view(-1,1)
 
         next_obs = [K.tensor(next_obs, dtype=K.float32) for next_obs in next_state_all['observation']]
-        next_goal = K.tensor(next_state_all['desired_goal'], dtype=K.float32)
-        next_achieved_goal = K.tensor(next_state_all['achieved_goal'], dtype=K.float32)
+        #next_goal = K.tensor(next_state_all['desired_goal'], dtype=K.float32)
+        #next_achieved_goal = K.tensor(next_state_all['achieved_goal'], dtype=K.float32)
 
-        normed_next_achieved_goal, normed_next_goal = normalizer[2].process(next_achieved_goal, next_goal)
-        with K.no_grad():
-            next_objtraj_goal = model.obj_traj(normed_next_achieved_goal, normed_next_goal)
+        #normed_next_achieved_goal, normed_next_goal = normalizer[2].process(next_achieved_goal, next_goal)
+        #with K.no_grad():
+        #    next_objtraj_goal = model.obj_traj(normed_next_achieved_goal, normed_next_goal)
         
         # Observation normalization
         next_obs_goal = []
         for i_agent in range(2):
-            next_obs_goal.append(K.cat([next_obs[i_agent], next_objtraj_goal], dim=-1))
+            next_obs_goal.append(K.cat([next_obs[i_agent], objtraj_goal, goal], dim=-1))
             if normalizer[i_agent] is not None:
                 next_obs_goal[i_agent] = normalizer[i_agent].preprocess(next_obs_goal[i_agent])
 
@@ -299,13 +307,17 @@ def rollout(env, model, noise, config, normalizer=None, render=False, agent_id=0
         for i_agent in range(2):
             state = {
                 'observation'   : state_all['observation'][i_agent],
-                'achieved_goal' : state_all['achieved_goal'],
-                'desired_goal'  : objtraj_goal.numpy().copy()  
+                'achieved_goal' : np.concatenate((state_all['achieved_goal'],
+                                                  state_all['achieved_goal']), axis=-1),
+                'desired_goal'  : np.concatenate((objtraj_goal.numpy().copy(), 
+                                                  state_all['desired_goal']), axis=-1),
                 }
             next_state = {
                 'observation'   : next_state_all['observation'][i_agent],
-                'achieved_goal' : next_state_all['achieved_goal'],
-                'desired_goal'  : next_objtraj_goal.numpy().copy()   
+                'achieved_goal' : np.concatenate((next_state_all['achieved_goal'],
+                                                  next_state_all['achieved_goal']), axis=-1),
+                'desired_goal'  : np.concatenate((objtraj_goal.numpy().copy(), 
+                                                  next_state_all['desired_goal']), axis=-1) 
                 }
             
             trajectories[i_agent].append((state.copy(), action_to_mem, reward, next_state.copy(), done))
