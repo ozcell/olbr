@@ -305,6 +305,9 @@ def get_params(args=[], verbose=False):
     
     parser.add_argument('--nb_objects_to_ignore', default=0, type=int,\
                          help='number of objects to be ignored in aux rewards')
+
+    parser.add_argument('--objtraj_goal_horizon', default=5, type=int,\
+                         help='The time-steps between object trajectory goals')
     # acquire in a dict
     config = parser.parse_args(args)
     args   = vars(config)
