@@ -22,7 +22,7 @@ def hard_update(target, source):
 class DDPG_BD(object):
     def __init__(self, observation_space, action_space, optimizer, Actor, Critic, loss_func, gamma, tau, out_func=K.sigmoid,
                  discrete=True, regularization=False, normalized_rewards=False, agent_id=0, object_Qfunc=None, backward_dyn=None, 
-                 object_policy=None, reward_fun=None, clip_Q_neg=None,
+                 object_policy=None, reward_fun=None, clip_Q_neg=None, nb_critics=2,
                  dtype=K.float32, device="cuda"):
 
         super(DDPG_BD, self).__init__()
@@ -45,6 +45,7 @@ class DDPG_BD(object):
         self.object_Qfunc = object_Qfunc
         self.object_policy = object_policy
         self.clip_Q_neg = clip_Q_neg if clip_Q_neg is not None else -1./(1.-self.gamma)
+        self.nb_critics = nb_critics
 
         # model initialization
         self.entities = []
@@ -69,18 +70,14 @@ class DDPG_BD(object):
         self.critics_target = []
         self.critics_optim = []
         
-        self.critics.append(Critic(observation_space, action_space[agent_id]).to(device))
-        self.critics_target.append(Critic(observation_space, action_space[agent_id]).to(device))
-        self.critics_optim.append(optimizer(self.critics[0].parameters(), lr = critic_lr))
+        for i_critic in range(self.nb_critics):
+            self.critics.append(Critic(observation_space, action_space[agent_id]).to(device))
+            self.critics_target.append(Critic(observation_space, action_space[agent_id]).to(device))
+            self.critics_optim.append(optimizer(self.critics[i_critic].parameters(), lr = critic_lr))
 
-        hard_update(self.critics_target[0], self.critics[0])
+        for i_critic in range(self.nb_critics):
+            hard_update(self.critics_target[i_critic], self.critics[i_critic])
 
-        self.critics.append(Critic(observation_space, action_space[agent_id]).to(device))
-        self.critics_target.append(Critic(observation_space, action_space[agent_id]).to(device))
-        self.critics_optim.append(optimizer(self.critics[1].parameters(), lr = critic_lr))
-
-        hard_update(self.critics_target[1], self.critics[1])
-            
         self.entities.extend(self.critics)
         self.entities.extend(self.critics_target)
         self.entities.extend(self.critics_optim)
@@ -101,7 +98,7 @@ class DDPG_BD(object):
             self.object_policy.eval()
             self.entities.append(self.object_policy)
 
-        print('seperaate Qs')
+        print('seperaate Qs for multiQ')
 
     def to_cpu(self):
         for entity in self.entities:
@@ -150,36 +147,25 @@ class DDPG_BD(object):
 
         r = K.tensor(batch['r'], dtype=self.dtype, device=self.device)
 
-        # first critic for main rewards
-        Q = self.critics[0](s, a)       
-        V = self.critics_target[0](s_, a_).detach()
+        for i_critic in range(self.nb_critics):
+            Q = self.critics[i_critic](s, a)       
+            V = self.critics_target[i_critic](s_, a_).detach()
 
-        target_Q = (V * self.gamma) + r[:,0:1]
-        target_Q = target_Q.clamp(self.clip_Q_neg, 0.)
+            target_Q = (V * self.gamma) + r[:,i_critic:i_critic+1]
+            target_Q = target_Q.clamp(self.clip_Q_neg, 0.)
 
-        loss_critic = self.loss_func(Q, target_Q)
+            loss_critic = self.loss_func(Q, target_Q)
 
-        self.critics_optim[0].zero_grad()
-        loss_critic.backward()
-        self.critics_optim[0].step()
-
-        # second critic for intrinsic
-        Q = self.critics[1](s, a)       
-        V = self.critics_target[1](s_, a_).detach()
-
-        target_Q = (V * self.gamma) + r[:,1:2]
-        target_Q = target_Q.clamp(self.clip_Q_neg, 0.)
-
-        loss_critic = self.loss_func(Q, target_Q)
-
-        self.critics_optim[1].zero_grad()
-        loss_critic.backward()
-        self.critics_optim[1].step()
+            self.critics_optim[i_critic].zero_grad()
+            loss_critic.backward()
+            self.critics_optim[i_critic].step()
 
         # actor update
         a = self.actors[0](s)
 
-        loss_actor = -self.critics[0](s, a).mean() - self.critics[1](s, a).mean()
+        loss_actor = 0.
+        for i_critic in range(self.nb_critics):
+            loss_actor += - self.critics[i_critic](s, a).mean()
         
         if self.regularization:
             loss_actor += (self.actors[0](s)**2).mean()*1
@@ -193,8 +179,8 @@ class DDPG_BD(object):
     def update_target(self):
 
         soft_update(self.actors_target[0], self.actors[0], self.tau)
-        soft_update(self.critics_target[0], self.critics[0], self.tau)
-        soft_update(self.critics_target[1], self.critics[1], self.tau)
+        for i_critic in range(self.nb_critics):
+            soft_update(self.critics_target[i_critic], self.critics[i_critic], self.tau)
 
 
 
