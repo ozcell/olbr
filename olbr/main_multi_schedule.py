@@ -402,7 +402,7 @@ def run(model, experiment_args, train=True):
         if train:
             for i_cycle in range(N_CYCLES):
                 
-                trajectories, episode_reward, success, _ = rollout(envs_train, model, False, config, normalizer, render=False)
+                trajectories, episode_reward, success, _ = rollout(envs_train, model, noise, config, normalizer, render=False)
                 memory.store_episode(trajectories.copy())   
 
                 episode_reward_cycle_train.extend(episode_reward)
@@ -513,7 +513,7 @@ def interfere(model, experiment_args, train=True):
         if train:
             for i_cycle in range(N_CYCLES):
                 
-                trajectories, episode_reward, success, _ = rollout(envs_train, model, noise, config, normalizer, render=False)
+                trajectories, episode_reward, success, _ = rollout(envs_train, model, False, config, normalizer, render=False)
                 memory.store_episode(trajectories.copy())   
 
             # <-- end loop: i_cycle
