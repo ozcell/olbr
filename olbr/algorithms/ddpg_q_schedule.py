@@ -21,8 +21,8 @@ def hard_update(target, source):
 
 class DDPG_BD(object):
     def __init__(self, observation_space, action_space, optimizer, Actor, Critic, loss_func, gamma, tau, out_func=K.sigmoid,
-                 discrete=True, regularization=False, normalized_rewards=False, agent_id=0, object_Qfunc=None, backward_dyn=None, 
-                 object_policy=None, reward_fun=None, clip_Q_neg=None, nb_critics=2,
+                 discrete=True, regularization=False, normalized_rewards=False, 
+                 reward_fun=None, clip_Q_neg=None, nb_critics=2,
                  dtype=K.float32, device="cuda"):
 
         super(DDPG_BD, self).__init__()
@@ -39,11 +39,10 @@ class DDPG_BD(object):
         self.normalized_rewards = normalized_rewards
         self.dtype = dtype
         self.device = device
+        if isinstance(observation_space, (list, tuple)):
+            observation_space = observation_space[0]
         self.observation_space = observation_space
         self.action_space = action_space
-        self.agent_id = agent_id
-        self.object_Qfunc = object_Qfunc
-        self.object_policy = object_policy
         self.clip_Q_neg = clip_Q_neg if clip_Q_neg is not None else -1./(1.-self.gamma)
         self.nb_critics = nb_critics
 
@@ -55,8 +54,8 @@ class DDPG_BD(object):
         self.actors_target = []
         self.actors_optim = []
         
-        self.actors.append(Actor(observation_space, action_space[agent_id], discrete, out_func).to(device))
-        self.actors_target.append(Actor(observation_space, action_space[agent_id], discrete, out_func).to(device))
+        self.actors.append(Actor(observation_space, action_space[0], discrete, out_func).to(device))
+        self.actors_target.append(Actor(observation_space, action_space[0], discrete, out_func).to(device))
         self.actors_optim.append(optimizer(self.actors[0].parameters(), lr = actor_lr))
 
         hard_update(self.actors_target[0], self.actors[0])
@@ -71,8 +70,8 @@ class DDPG_BD(object):
         self.critics_optim = []
         
         for i_critic in range(self.nb_critics):
-            self.critics.append(Critic(observation_space, action_space[agent_id]).to(device))
-            self.critics_target.append(Critic(observation_space, action_space[agent_id]).to(device))
+            self.critics.append(Critic(observation_space, action_space[0]).to(device))
+            self.critics_target.append(Critic(observation_space, action_space[0]).to(device))
             self.critics_optim.append(optimizer(self.critics[i_critic].parameters(), lr = critic_lr))
 
         for i_critic in range(self.nb_critics):
@@ -81,22 +80,6 @@ class DDPG_BD(object):
         self.entities.extend(self.critics)
         self.entities.extend(self.critics_target)
         self.entities.extend(self.critics_optim)
-
-        # backward dynamics model
-        if backward_dyn is not None:
-            self.backward = backward_dyn
-            self.backward.eval()
-            self.entities.append(self.backward)
-
-        # Learnt Q function for object
-        if self.object_Qfunc is not None:
-            self.object_Qfunc.eval()
-            self.entities.append(self.object_Qfunc)
-
-        # Learnt policy for object
-        if self.object_policy is not None:
-            self.object_policy.eval()
-            self.entities.append(self.object_policy)
 
         print('seperaate Qs for multiQ')
 
@@ -119,7 +102,7 @@ class DDPG_BD(object):
         self.actors[0].train()
         if exploration:
             mu = K.tensor(exploration.get_noisy_action(mu.cpu().numpy()), dtype=self.dtype, device=self.device)
-        mu = mu.clamp(int(self.action_space[self.agent_id].low[0]), int(self.action_space[self.agent_id].high[0]))
+        mu = mu.clamp(int(self.action_space[0].low[0]), int(self.action_space[0].high[0]))
 
         return mu
 
