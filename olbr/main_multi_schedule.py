@@ -114,14 +114,14 @@ def init(config, agent='robot', her=False,
                 if not use_step_reward_fun:
                     obj_rew = dummy_env.compute_reward(achieved_goal=ag_2[:,goal_len*i_reward:goal_len*(i_reward+1)], 
                                                     desired_goal=g[:,goal_len*i_reward:goal_len*(i_reward+1)], info=info)
+                    all_rew = np.concatenate((all_rew, obj_rew.copy()[:, np.newaxis]), axis=-1)
                 else:
                     goal_a = ag_2[:,goal_len*i_reward:goal_len*(i_reward+1)].reshape(-1,dummy_env.env.n_objects,3)
                     goal_b = g[:,goal_len*i_reward:goal_len*(i_reward+1)].reshape(-1,dummy_env.env.n_objects,3)
                     d = np.linalg.norm(goal_a - goal_b, axis=-1)
                     #obj_rew = - (d > dummy_env.env.distance_threshold).astype(np.float32).sum(-1)
                     obj_rew = - (d > dummy_env.env.distance_threshold).astype(np.float32)
-                #all_rew = np.concatenate((all_rew, obj_rew.copy()[:, np.newaxis]), axis=-1)
-                all_rew = np.concatenate((all_rew, obj_rew.copy()), axis=-1)
+                    all_rew = np.concatenate((all_rew, obj_rew.copy()), axis=-1)
             return all_rew
         
         return _her_reward_fun
@@ -168,7 +168,7 @@ def init(config, agent='robot', her=False,
     model = MODEL(observation_space, action_space, optimizer, 
                   Actor, Critic, loss_func, GAMMA, TAU, out_func=OUT_FUNC, discrete=False, 
                   regularization=REGULARIZATION, normalized_rewards=NORMALIZED_REWARDS,
-                  reward_fun=reward_fun, clip_Q_neg=clip_Q_neg, nb_critics=3#config['max_nb_objects']+1
+                  reward_fun=reward_fun, clip_Q_neg=clip_Q_neg, nb_critics=config['max_nb_objects']+1 #or fixing to 3
                   )
 
     model.n_objects = config['max_nb_objects']
