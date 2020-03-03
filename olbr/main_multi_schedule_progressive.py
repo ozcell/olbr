@@ -102,36 +102,13 @@ def init(config, agent='robot', her=False,
         envs_test = None
         envs_render = None
 
-    def make_her_reward_fun(nb_critics, use_step_reward_fun=False):
-
-        def _her_reward_fun(ag_2, g, info):  # vectorized
-            goal_len = ag_2.shape[1]//nb_critics
-            
-            rew = dummy_env.compute_reward(achieved_goal=ag_2[:,0:goal_len], desired_goal=g[:,0:goal_len], info=info)
-            all_rew = rew.copy()[:, np.newaxis]
-
-            for i_reward in range(1,nb_critics):
-                if not use_step_reward_fun:
-                    obj_rew = dummy_env.compute_reward(achieved_goal=ag_2[:,goal_len*i_reward:goal_len*(i_reward+1)], 
-                                                    desired_goal=g[:,goal_len*i_reward:goal_len*(i_reward+1)], info=info)
-                    all_rew = np.concatenate((all_rew, obj_rew.copy()[:, np.newaxis]), axis=-1)
-                else:
-                    goal_a = ag_2[:,goal_len*i_reward:goal_len*(i_reward+1)].reshape(-1,dummy_env.env.n_objects,3)
-                    goal_b = g[:,goal_len*i_reward:goal_len*(i_reward+1)].reshape(-1,dummy_env.env.n_objects,3)
-                    d = np.linalg.norm(goal_a - goal_b, axis=-1)
-                    #obj_rew = - (d > dummy_env.env.distance_threshold).astype(np.float32).sum(-1)
-                    obj_rew = - (d > dummy_env.env.distance_threshold).astype(np.float32)
-                    all_rew = np.concatenate((all_rew, obj_rew.copy()), axis=-1)
-            return all_rew
-        
-        return _her_reward_fun
-
-    her_reward_fun = make_her_reward_fun(2, config['use_step_reward_fun'])
+    def her_reward_fun(ag_2, g, info):  # vectorized
+        return dummy_env.compute_reward(achieved_goal=ag_2, desired_goal=g, info=info).reshape(-1,1)
 
     K.manual_seed(SEED)
     np.random.seed(SEED)
 
-    observation_space = dummy_env.observation_space.spaces['observation'].shape[1] + dummy_env.observation_space.spaces['desired_goal'].shape[0]*2
+    observation_space = dummy_env.observation_space.spaces['observation'].shape[1] + dummy_env.observation_space.spaces['desired_goal'].shape[0]
     action_space = (gym.spaces.Box(-1., 1., shape=(n_rob_actions,), dtype='float32'),
                     gym.spaces.Box(-1., 1., shape=(n_actions-n_rob_actions,), dtype='float32'),
                     gym.spaces.Box(-1., 1., shape=(n_actions,), dtype='float32'))
@@ -168,7 +145,7 @@ def init(config, agent='robot', her=False,
     model = MODEL(observation_space, action_space, optimizer, 
                   Actor, Critic, loss_func, GAMMA, TAU, out_func=OUT_FUNC, discrete=False, 
                   regularization=REGULARIZATION, normalized_rewards=NORMALIZED_REWARDS,
-                  reward_fun=reward_fun, clip_Q_neg=clip_Q_neg, nb_critics=config['max_nb_objects']+1 #or fixing to 3
+                  reward_fun=reward_fun, clip_Q_neg=clip_Q_neg, nb_critics=config['max_nb_objects'] #or fixing to 3
                   )
 
     model.n_objects = config['max_nb_objects']
@@ -178,18 +155,21 @@ def init(config, agent='robot', her=False,
             self.mean = mean
             self.std = std
 
-        def process(self, achieved, desired):
+        def process(self, achieved, desired, step):
             achieved_out = achieved - K.tensor(self.mean[0], dtype=achieved.dtype, device=achieved.device)
             achieved_out /= K.tensor(self.std[0], dtype=achieved.dtype, device=achieved.device)
 
             desired_out = desired - K.tensor(self.mean[1], dtype=desired.dtype, device=desired.device)
             desired_out /= K.tensor(self.std[1], dtype=desired.dtype, device=desired.device)
 
-            return achieved_out, desired_out
+            step_out = step - K.tensor(self.mean[2], dtype=desired.dtype, device=desired.device)
+            step_out /= K.tensor(self.std[2], dtype=desired.dtype, device=desired.device)
+
+            return achieved_out, desired_out, step_out
 
     normalizer = [Normalizer(), Normalizer(), NormalizerObj(obj_mean, obj_std)]
 
-    model.obj_traj = obj_traj.to('cpu')
+    model.obj_traj = obj_traj.to('cuda')
     model.obj_traj.eval()
 
     for _ in range(1):
@@ -200,26 +180,12 @@ def init(config, agent='robot', her=False,
 
             obs = [K.tensor(obs, dtype=K.float32).unsqueeze(0) for obs in state_all['observation']]
             goal = K.tensor(state_all['desired_goal'], dtype=K.float32).unsqueeze(0)
-            if i_step%config['objtraj_goal_horizon'] == 0:
-                achieved_goal = K.tensor(state_all['achieved_goal'], dtype=K.float32).unsqueeze(0)
-
-                objtraj_goal = []
-                goal_len_per_obj = goal.shape[1]//model.n_objects
-                for i_object in range(model.n_objects):
-                    
-                    achieved_goal_per_obj = achieved_goal[:,i_object*goal_len_per_obj:(i_object+1)*goal_len_per_obj]
-                    goal_per_obj = goal[:,i_object*goal_len_per_obj:(i_object+1)*goal_len_per_obj]
-
-                    normed_achieved_goal_per_obj, normed_goal_per_goal = normalizer[2].process(achieved_goal_per_obj, goal_per_obj)
-                    with K.no_grad():
-                        objtraj_goal_per_obj = model.obj_traj(normed_achieved_goal_per_obj, normed_goal_per_goal)
-
-                    objtraj_goal.append(objtraj_goal_per_obj)
-                objtraj_goal = K.cat(objtraj_goal, dim=-1)
+            if i_step == 0:
+                objtraj_goal = goal
 
             # Observation normalization
             obs_goal = []
-            obs_goal.append(K.cat([obs[0], goal, objtraj_goal], dim=-1))
+            obs_goal.append(K.cat([obs[0], objtraj_goal], dim=-1))
             if normalizer[0] is not None:
                 obs_goal[0] = normalizer[0].preprocess_with_update(obs_goal[0])
 
@@ -240,13 +206,15 @@ def init(config, agent='robot', her=False,
 
     buffer_shapes = {
         'o' : (config['episode_length'], dummy_env.observation_space.spaces['observation'].shape[1]*2),
-        'ag' : (config['episode_length'], dummy_env.observation_space.spaces['achieved_goal'].shape[0]*2),
-        'g' : (config['episode_length'], dummy_env.observation_space.spaces['desired_goal'].shape[0]*2),
+        'ag' : (config['episode_length'], dummy_env.observation_space.spaces['achieved_goal'].shape[0]),
+        'g' : (config['episode_length'], dummy_env.observation_space.spaces['desired_goal'].shape[0]),
         'u' : (config['episode_length']-1, action_space[2].shape[0])
         }
     memory = ReplayBuffer(buffer_shapes, MEM_SIZE, config['episode_length'], sample_her_transitions)
 
     experiment_args = ((envs, envs_test, envs_render), memory, noise, config, normalizer, None)
+
+    print("0.20 - 0.25 - boundary_sample iff original_goal update norm")
           
     return model, experiment_args
 
@@ -263,7 +231,7 @@ def back_to_dict(state, config):
 
     return state_dict
 
-def rollout(env, model, noise, config, normalizer=None, render=False):
+def rollout(env, model, noise, config, normalizer=None, render=False, step=(1,5), boundary_sample=False):
     trajectories = []
     for i_agent in range(2):
         trajectories.append([])
@@ -275,35 +243,48 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
     state_all = env.reset()
     state_all = back_to_dict(state_all, config)
 
+    step_l, step_h = step
     for i_step in range(config['episode_length']):
 
         model.to_cpu()
 
         obs = [K.tensor(obs, dtype=K.float32) for obs in state_all['observation']]
         goal = K.tensor(state_all['desired_goal'], dtype=K.float32)
-        if i_step%config['objtraj_goal_horizon'] == 0:
-            achieved_goal = K.tensor(state_all['achieved_goal'], dtype=K.float32)
+        if i_step == 0:
+            if (np.random.rand() < 0.20 and not boundary_sample) or (step_h >= config['episode_length']):
+                objtraj_goal = goal
+                original_goal = True
+            else:
+                original_goal = False
+                achieved_goal = K.tensor(state_all['achieved_goal'], dtype=K.float32)
 
-            objtraj_goal = []
-            goal_len_per_obj = goal.shape[1]//model.n_objects
-            for i_object in range(model.n_objects):
-                
-                achieved_goal_per_obj = achieved_goal[:,i_object*goal_len_per_obj:(i_object+1)*goal_len_per_obj]
-                goal_per_obj = goal[:,i_object*goal_len_per_obj:(i_object+1)*goal_len_per_obj]
+                objtraj_goal = []
+                goal_len_per_obj = goal.shape[1]//model.n_objects
+                for i_object in range(model.n_objects):
+                    
+                    achieved_goal_per_obj = achieved_goal[:,i_object*goal_len_per_obj:(i_object+1)*goal_len_per_obj]
+                    goal_per_obj = goal[:,i_object*goal_len_per_obj:(i_object+1)*goal_len_per_obj]
 
-                normed_achieved_goal_per_obj, normed_goal_per_goal = normalizer[2].process(achieved_goal_per_obj, goal_per_obj)
-                with K.no_grad():
-                    objtraj_goal_per_obj = model.obj_traj(normed_achieved_goal_per_obj, normed_goal_per_goal)
+                    normed_achieved_goal_per_obj, normed_goal_per_goal, normed_step = normalizer[2].process(achieved_goal_per_obj, 
+                                                                                                            goal_per_obj, 
+                                                                                                            K.randint(low=step_l,high=step_h+1,size=(achieved_goal_per_obj.shape[0],1)))
+                    with K.no_grad():
+                        objtraj_goal_per_obj = model.obj_traj(normed_achieved_goal_per_obj.to('cuda'), 
+                                                              normed_goal_per_goal.to('cuda'), 
+                                                              normed_step.to('cuda'))
 
-                objtraj_goal.append(objtraj_goal_per_obj)
-            objtraj_goal = K.cat(objtraj_goal, dim=-1)
+                    objtraj_goal.append(objtraj_goal_per_obj.cpu())
+                objtraj_goal = K.cat(objtraj_goal, dim=-1)
         
         # Observation normalization
         obs_goal = []
         for i_agent in range(2):
-            obs_goal.append(K.cat([obs[i_agent], goal, objtraj_goal], dim=-1))
+            obs_goal.append(K.cat([obs[i_agent], objtraj_goal], dim=-1))
             if normalizer[i_agent] is not None:
-                obs_goal[i_agent] = normalizer[i_agent].preprocess_with_update(obs_goal[i_agent])
+                if not original_goal:
+                    obs_goal[i_agent] = normalizer[i_agent].preprocess(obs_goal[i_agent])
+                else:
+                    obs_goal[i_agent] = normalizer[i_agent].preprocess_with_update(obs_goal[i_agent])
 
         action = model.select_action(obs_goal[0], noise).cpu().numpy()
 
@@ -319,16 +300,14 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
         for i_agent in range(2):
             state = {
                 'observation'   : state_all['observation'][i_agent].copy(),
-                'achieved_goal' : np.concatenate((state_all['achieved_goal'].copy(),
-                                                  state_all['achieved_goal'].copy()), axis=-1),
-                'desired_goal'  : np.concatenate((state_all['desired_goal'].copy(),
-                                                  objtraj_goal.numpy().copy()), axis=-1),
+                'achieved_goal' : state_all['achieved_goal'].copy(),
+                'desired_goal'  : objtraj_goal.numpy().copy()
                 }
             
             trajectories[i_agent].append((state.copy(), action_to_mem, reward))
         
         goal_a = state_all['achieved_goal']
-        goal_b = state_all['desired_goal']
+        goal_b = objtraj_goal.numpy().copy()#state_all['desired_goal']
         ENV_NAME = config['env_id'] 
         if 'Rotate' in ENV_NAME:
             goal_a = goal_a[:,3:]
@@ -342,6 +321,7 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
             frames.append(env.render(mode='rgb_array')[0])
 
     distance = np.linalg.norm(goal_a - goal_b, axis=-1)
+    distance = (distance < 0.05).astype(np.float32)
     
     obs, ags, goals, acts = [], [], [], []
 
@@ -393,20 +373,25 @@ def run(model, experiment_args, train=True):
     actor_losses = []
 
     best_succeess = -1
+
+    obj_traj_step = 1
         
     for i_episode in range(N_EPISODES):
         
         episode_time_start = time.time()
         episode_reward_cycle_train = []
         episode_succeess_cycle_train = []
+        episode_distance_cycle_train = []
         if train:
             for i_cycle in range(N_CYCLES):
                 
-                trajectories, episode_reward, success, _ = rollout(envs_train, model, noise, config, normalizer, render=False)
+                trajectories, episode_reward, success, distance = rollout(envs_train, model, noise, config, normalizer, render=False,
+                                                                   step=(1, obj_traj_step))
                 memory.store_episode(trajectories.copy())   
 
                 episode_reward_cycle_train.extend(episode_reward)
                 episode_succeess_cycle_train.extend(success)
+                episode_distance_cycle_train.extend(distance)
               
                 for i_batch in range(N_BATCHES):  
                     model.to_cuda()
@@ -419,6 +404,13 @@ def run(model, experiment_args, train=True):
 
                 model.update_target()
 
+                _, _, _, success = rollout(envs_train, model, False, config, normalizer=normalizer, render=False, 
+                                                            step=(obj_traj_step, obj_traj_step),boundary_sample=True)
+
+                if success.mean() >= 0.25 and obj_traj_step < config['episode_length']:
+                    obj_traj_step += 1
+                    print(obj_traj_step)
+
 
             # <-- end loop: i_cycle
         plot_durations(np.asarray(critic_losses), np.asarray(actor_losses))
@@ -429,7 +421,8 @@ def run(model, experiment_args, train=True):
         rollout_per_env = N_TEST_ROLLOUTS // config['n_envs']
         for i_rollout in range(rollout_per_env):
             render = config['render'] == 2 and i_episode % config['render'] == 0
-            _, episode_reward, success, distance = rollout(envs_test, model, False, config, normalizer=normalizer, render=render)
+            _, episode_reward, success, distance = rollout(envs_test, model, False, config, normalizer=normalizer, render=render, 
+                                                           step=(1,config['episode_length']))
                 
             episode_reward_cycle.extend(episode_reward)
             episode_succeess_cycle.extend(success)
@@ -438,7 +431,8 @@ def run(model, experiment_args, train=True):
         render = (config['render'] == 1) and (i_episode % config['render'] == 0) and (envs_render is not None)
         if render:
             for i_rollout in range(10):
-                _, _, _, _ = rollout(envs_render, model, False, config, normalizer=normalizer, render=render)
+                _, _, _, _ = rollout(envs_render, model, False, config, normalizer=normalizer, render=render, 
+                                     step=(1,config['episode_length']))
         # <-- end loop: i_rollout 
             
         ### MONITORIRNG ###
@@ -467,6 +461,7 @@ def run(model, experiment_args, train=True):
                 print('  | Process pid: {}'.format(config['process_pid']))
                 print('  | Running mean of total reward - training: {}'.format(np.mean(episode_reward_cycle_train)))
                 print('  | Success rate - training: {}'.format(np.mean(episode_succeess_cycle_train)))
+                print('  | Distance - training: {}'.format(np.mean(episode_distance_cycle_train)))
                 print('  | Running mean of total reward: {}'.format(episode_reward_mean[-1]))
                 print('  | Success rate: {}'.format(episode_success_mean[-1]))
                 print('  | Distance to target {}'.format(episode_distance_mean[-1]))
