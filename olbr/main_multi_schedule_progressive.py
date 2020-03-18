@@ -25,6 +25,8 @@ import matplotlib.pyplot as plt
 
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
+from gym_wmgds.envs.robotics import rotations
+
 device = K.device("cuda" if K.cuda.is_available() else "cpu")
 dtype = K.float32
 
@@ -281,10 +283,10 @@ def rollout(env, model, noise, config, normalizer=None, render=False, step=(1,5)
         for i_agent in range(2):
             obs_goal.append(K.cat([obs[i_agent], objtraj_goal], dim=-1))
             if normalizer[i_agent] is not None:
-                if not original_goal:
-                    obs_goal[i_agent] = normalizer[i_agent].preprocess(obs_goal[i_agent])
-                else:
-                    obs_goal[i_agent] = normalizer[i_agent].preprocess_with_update(obs_goal[i_agent])
+                #if not original_goal:
+                #    obs_goal[i_agent] = normalizer[i_agent].preprocess(obs_goal[i_agent])
+                #else:
+                obs_goal[i_agent] = normalizer[i_agent].preprocess_with_update(obs_goal[i_agent])
 
         action = model.select_action(obs_goal[0], noise).cpu().numpy()
 
@@ -310,8 +312,8 @@ def rollout(env, model, noise, config, normalizer=None, render=False, step=(1,5)
         goal_b = objtraj_goal.numpy().copy()#state_all['desired_goal']
         ENV_NAME = config['env_id'] 
         if 'Rotate' in ENV_NAME:
-            goal_a = goal_a[:,3:]
-            goal_b = goal_b[:,3:]
+            quat_a = goal_a[:,3:]
+            quat_b = goal_b[:,3:]
 
         # Move to the next state
         state_all = next_state_all
@@ -320,8 +322,15 @@ def rollout(env, model, noise, config, normalizer=None, render=False, step=(1,5)
         if render:
             frames.append(env.render(mode='rgb_array')[0])
 
-    distance = np.linalg.norm(goal_a - goal_b, axis=-1)
-    distance = (distance < 0.05).astype(np.float32)
+    if 'Rotate' in ENV_NAME:
+        # Subtract quaternions and extract angle between them.
+        quat_diff = rotations.quat_mul(quat_a, rotations.quat_conjugate(quat_b))
+        angle_diff = 2 * np.arccos(np.clip(quat_diff[..., 0], -1., 1.))
+        d_rot = angle_diff
+        distance = (d_rot < 0.1).astype(np.float32)
+    else:
+        distance = np.linalg.norm(goal_a - goal_b, axis=-1)
+        distance = (distance < 0.05).astype(np.float32)
     
     obs, ags, goals, acts = [], [], [], []
 
