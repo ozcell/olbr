@@ -22,7 +22,7 @@ def hard_update(target, source):
 class DDPG_BD(object):
     def __init__(self, observation_space, action_space, optimizer, Actor, Critic, loss_func, gamma, tau, out_func=K.sigmoid,
                  discrete=True, regularization=False, normalized_rewards=False, agent_id=0, object_Qfunc=None, backward_dyn=None, 
-                 object_policy=None, reward_fun=None, masked_with_r=False, clip_Q_neg=None, goal_shape=None,
+                 object_policy=None, reward_fun=None, masked_with_r=False, clip_Q_neg=None, goal_space=None,
                  dtype=K.float32, device="cuda"):
 
         super(DDPG_BD, self).__init__()
@@ -117,8 +117,8 @@ class DDPG_BD(object):
         else:
             self.get_obj_reward = self.reward_fun
 
-        self.rnd = RandomNetDist(goal_shape).to(device)
-        self.rnd_target = RandomNetDist(goal_shape).to(device)
+        self.rnd = RandomNetDist(goal_space).to(device)
+        self.rnd_target = RandomNetDist(goal_space).to(device)
         self.rnd_optim = optimizer(self.rnd.parameters(), lr = critic_lr)
         self.entities.append(self.rnd)
         self.entities.append(self.rnd_target)
@@ -304,8 +304,8 @@ class DDPG_BD(object):
         if normalizer[self.agent_id] is not None:
             s1_ = normalizer[self.agent_id].preprocess(s1_)
 
-        target = self.rnd_target(s1_[observation_space::]).detach()
-        pred = self.rnd(s1_[observation_space::])
+        target = self.rnd_target(s1_[:,observation_space::]).detach()
+        pred = self.rnd(s1_[:,observation_space::])
 
         loss_rnd = self.loss_func(pred, target)
 
