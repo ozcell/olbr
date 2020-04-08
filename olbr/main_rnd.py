@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 import gym_wmgds as gym
 
-from olbr.algorithms.ddpg import DDPG_BD
+from olbr.algorithms.ddpg_rnd import DDPG_BD
 from olbr.experience import Normalizer
 from olbr.exploration import Noise
 from olbr.utils import Saver, Summarizer, get_params, running_mean
@@ -134,7 +134,8 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
                   Actor, Critic, loss_func, GAMMA, TAU, out_func=OUT_FUNC, discrete=False, 
                   regularization=REGULARIZATION, normalized_rewards=NORMALIZED_REWARDS,
                   agent_id=agent_id, object_Qfunc=object_Qfunc, backward_dyn=backward_dyn, 
-                  object_policy=object_policy, reward_fun=reward_fun, clip_Q_neg=clip_Q_neg
+                  object_policy=object_policy, reward_fun=reward_fun, clip_Q_neg=clip_Q_neg,
+                  goal_space=dummy_env.reset()['desired_goal'].shape[0]
                   )
     normalizer = [Normalizer(), Normalizer()]
 
@@ -196,7 +197,7 @@ def back_to_dict(state, config):
 
     return state_dict
 
-def rollout(env, model, noise, config, normalizer=None, render=False, agent_id=0, ai_object=False, rob_policy=[0., 0.]):
+def rollout(env, model, noise, config, normalizer=None, render=False, agent_id=0, ai_object=False, rob_policy=[0., 0.], normalizer_update=True):
     trajectories = []
     for i_agent in range(2):
         trajectories.append([])
@@ -220,7 +221,10 @@ def rollout(env, model, noise, config, normalizer=None, render=False, agent_id=0
         for i_agent in range(2):
             obs_goal.append(K.cat([obs[i_agent], goal], dim=-1))
             if normalizer[i_agent] is not None:
-                obs_goal[i_agent] = normalizer[i_agent].preprocess_with_update(obs_goal[i_agent])
+                if normalizer_update:
+                    obs_goal[i_agent] = normalizer[i_agent].preprocess_with_update(obs_goal[i_agent])
+                else:
+                    obs_goal[i_agent] = normalizer[i_agent].preprocess(obs_goal[i_agent])
 
         action = model.select_action(obs_goal[agent_id], noise).cpu().numpy()
 
@@ -337,6 +341,7 @@ def run(model, experiment_args, train=True):
     actor_losses = []
     backward_losses = []
     backward_otw_losses = []
+    rnd_losses = []
 
     best_succeess = -1
         
@@ -355,9 +360,11 @@ def run(model, experiment_args, train=True):
 
                     batch = memory.sample(BATCH_SIZE)
                     critic_loss, actor_loss = model.update_parameters(batch, normalizer)
+                    rnd_loss = model.update_rnd(batch, normalizer)  
                     if i_batch == N_BATCHES - 1:
                         critic_losses.append(critic_loss)
                         actor_losses.append(actor_loss)
+                        rnd_losses.append(rnd_loss)
 
                 model.update_target()
 
@@ -370,6 +377,8 @@ def run(model, experiment_args, train=True):
 
             # <-- end loop: i_cycle
         plot_durations(np.asarray(critic_losses), np.asarray(actor_losses))
+
+        plot_durations(np.asarray(rnd_losses), np.asarray(rnd_losses))
 
         episode_reward_cycle = []
         episode_succeess_cycle = []
@@ -439,6 +448,165 @@ def run(model, experiment_args, train=True):
         print('Test completed')
 
     return (episode_reward_all, episode_success_all, episode_distance_all), (bestmodel_critic, bestmodel_actor, bestmodel_normalizer)
+
+
+def train_rnd(model, experiment_args):
+
+    total_time_start =  time.time()
+
+    envs, memory, noise, config, normalizer, agent_id = experiment_args
+    envs_train, envs_render = envs
+    
+    N_EPISODES = config['n_episodes']
+    N_CYCLES = config['n_cycles']
+    N_BATCHES = config['n_batches']
+    N_TEST_ROLLOUTS = config['n_test_rollouts']
+    BATCH_SIZE = config['batch_size']
+    
+    episode_reward_all = []
+    episode_success_all = []
+    episode_reward_mean = []
+    episode_success_mean = []
+    rnd_losses = []
+        
+    for i_episode in range(N_EPISODES):
+        
+        episode_time_start = time.time()
+        for i_cycle in range(N_CYCLES):
+            
+            ai_object = 1 if np.random.rand() < config['ai_object_rate']  else 0
+            trajectories, _, _, _ = rollout(envs_train, model, noise, config, normalizer, render=False, agent_id=agent_id, ai_object=ai_object, rob_policy=config['rob_policy'], normalizer_update=False)
+            memory.store_episode(trajectories.copy())   
+            
+            for i_batch in range(N_BATCHES):  
+                model.to_cuda()
+
+                batch = memory.sample(BATCH_SIZE)
+                rnd_loss = model.update_rnd(batch, normalizer)  
+                if i_batch == N_BATCHES - 1:
+                    rnd_losses.append(rnd_loss)
+
+            # <-- end loop: i_cycle
+
+        plot_durations(np.asarray(rnd_losses), np.asarray(rnd_losses))
+
+        episode_reward_cycle = []
+        episode_succeess_cycle = []
+        rollout_per_env = N_TEST_ROLLOUTS // config['n_envs']
+        for i_rollout in range(rollout_per_env):
+            render = config['render'] == 2 and i_episode % config['render'] == 0
+            _, episode_reward, success, _ = rollout(envs_train, model, False, config, normalizer=normalizer, render=render, agent_id=agent_id, ai_object=False, rob_policy=config['rob_policy'], normalizer_update=False)     
+
+            episode_reward_cycle.extend(episode_reward)
+            episode_succeess_cycle.extend(success)
+
+        render = (config['render'] == 1) and (i_episode % config['render'] == 0) and (envs_render is not None)
+        if render:
+            for i_rollout in range(10):
+                _, _, _, _ = rollout(envs_render, model, noise, config, normalizer=normalizer, render=render, agent_id=agent_id, ai_object=False, rob_policy=config['rob_policy'], normalizer_update=False)
+        # <-- end loop: i_rollout 
+            
+        ### MONITORIRNG ###
+        episode_reward_all.append(episode_reward_cycle)
+        episode_success_all.append(episode_succeess_cycle)
+
+        episode_reward_mean.append(np.mean(episode_reward_cycle))
+        episode_success_mean.append(np.mean(episode_succeess_cycle))
+        plot_durations(np.asarray(episode_reward_mean), np.asarray(episode_success_mean))
+
+        if config['verbose'] > 0:
+        # Printing out
+            if (i_episode+1)%1 == 0:
+                print("==> Episode {} of {}".format(i_episode + 1, N_EPISODES))
+                print('  | Id exp: {}'.format(config['exp_id']))
+                print('  | Exp description: {}'.format(config['exp_descr']))
+                print('  | Env: {}'.format(config['env_id']))
+                print('  | Process pid: {}'.format(config['process_pid']))
+                print('  | Running mean of total reward: {}'.format(episode_reward_mean[-1]))
+                print('  | Success rate: {}'.format(episode_success_mean[-1]))
+                print('  | Time episode: {}'.format(time.time()-episode_time_start))
+                print('  | Time total: {}'.format(time.time()-total_time_start))
+
+    # <-- end loop: i_episode
+
+
+    print('Training completed')
+
+    return rnd_loss
+
+def interfere(model, experiment_args):
+
+    total_time_start =  time.time()
+
+    envs, memory, noise, config, normalizer, agent_id = experiment_args
+    envs_train, envs_render = envs
+    
+    N_EPISODES = config['n_episodes']
+    N_CYCLES = config['n_cycles']
+    N_BATCHES = config['n_batches']
+    N_TEST_ROLLOUTS = config['n_test_rollouts']
+    BATCH_SIZE = config['batch_size']
+    
+    episode_reward_all = []
+    episode_success_all = []
+    episode_reward_mean = []
+    episode_success_mean = []
+        
+    for i_episode in range(N_EPISODES):
+        
+        episode_time_start = time.time()
+        for i_cycle in range(N_CYCLES):
+            
+            ai_object = 1 if np.random.rand() < config['ai_object_rate']  else 0
+            trajectories, _, _, _ = rollout(envs_train, model, False, config, normalizer, render=False, agent_id=agent_id, ai_object=ai_object, rob_policy=config['rob_policy'], normalizer_update=False)
+            memory.store_episode(trajectories.copy())   
+
+            # <-- end loop: i_cycle
+
+        episode_reward_cycle = []
+        episode_succeess_cycle = []
+        rollout_per_env = N_TEST_ROLLOUTS // config['n_envs']
+        for i_rollout in range(rollout_per_env):
+            render = config['render'] == 2 and i_episode % config['render'] == 0
+            _, episode_reward, success, _ = rollout(envs_train, model, False, config, normalizer=normalizer, render=render, agent_id=agent_id, ai_object=False, rob_policy=config['rob_policy'], normalizer_update=False)     
+
+            episode_reward_cycle.extend(episode_reward)
+            episode_succeess_cycle.extend(success)
+
+        render = (config['render'] == 1) and (i_episode % config['render'] == 0) and (envs_render is not None)
+        if render:
+            for i_rollout in range(10):
+                _, _, _, _ = rollout(envs_render, model, False, config, normalizer=normalizer, render=render, agent_id=agent_id, ai_object=False, rob_policy=config['rob_policy'], normalizer_update=False)
+        # <-- end loop: i_rollout 
+            
+        ### MONITORIRNG ###
+        episode_reward_all.append(episode_reward_cycle)
+        episode_success_all.append(episode_succeess_cycle)
+
+        episode_reward_mean.append(np.mean(episode_reward_cycle))
+        episode_success_mean.append(np.mean(episode_succeess_cycle))
+        plot_durations(np.asarray(episode_reward_mean), np.asarray(episode_success_mean))
+
+        if config['verbose'] > 0:
+        # Printing out
+            if (i_episode+1)%1 == 0:
+                print("==> Episode {} of {}".format(i_episode + 1, N_EPISODES))
+                print('  | Id exp: {}'.format(config['exp_id']))
+                print('  | Exp description: {}'.format(config['exp_descr']))
+                print('  | Env: {}'.format(config['env_id']))
+                print('  | Process pid: {}'.format(config['process_pid']))
+                print('  | Running mean of total reward: {}'.format(episode_reward_mean[-1]))
+                print('  | Success rate: {}'.format(episode_success_mean[-1]))
+                print('  | Time episode: {}'.format(time.time()-episode_time_start))
+                print('  | Time total: {}'.format(time.time()-total_time_start))
+
+    # <-- end loop: i_episode
+
+
+    print('Training completed')
+
+    return None
+
 
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
