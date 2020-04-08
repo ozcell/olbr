@@ -117,13 +117,6 @@ class DDPG_BD(object):
         else:
             self.get_obj_reward = self.reward_fun
 
-        self.rnd = RandomNetDist(goal_space).to(device)
-        self.rnd_target = RandomNetDist(goal_space).to(device)
-        self.rnd_optim = optimizer(self.rnd.parameters(), lr = critic_lr)
-        self.entities.append(self.rnd)
-        self.entities.append(self.rnd_target)
-        self.entities.append(self.rnd_optim)
-
         print('clipped + r')
 
     def to_cpu(self):
@@ -293,25 +286,3 @@ class DDPG_BD(object):
         self.backward_otw_optim.step()
 
         return loss_backward_otw.item()
-
-    def update_rnd(self, batch, normalizer=None):
-
-        observation_space = self.observation_space - K.tensor(batch['g'], dtype=self.dtype, device=self.device).shape[1]
-
-        s1_ = K.cat([K.zeros_like(K.tensor(batch['o_2'], dtype=self.dtype, device=self.device)[:, 0:observation_space]),
-                    K.tensor(batch['ag_2'], dtype=self.dtype, device=self.device)], dim=-1)
-        
-        if normalizer[self.agent_id] is not None:
-            s1_ = normalizer[self.agent_id].preprocess(s1_)
-
-        target = self.rnd_target(s1_[:,observation_space::]).detach()
-        pred = self.rnd(s1_[:,observation_space::])
-
-        loss_rnd = self.loss_func(pred, target)
-
-        self.rnd_optim.zero_grad()
-        loss_rnd.backward()
-        self.rnd_optim.step()
-
-        return loss_rnd.item()
-
