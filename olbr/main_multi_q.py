@@ -104,9 +104,11 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
     if config['use_step_reward_fun']:
         her_reward_fun = her_reward_fun_step
         print('using step reward')
+        #print('using step reward - sum + new her sampling - 0.85')
     else:
         her_reward_fun = her_reward_fun_sparse
         print('using sparse reward')
+        #print('using sparse reward - new her sampling - 0.85')
     
     if config['change_stack_order']:
         print('changing the stacking order')
@@ -135,6 +137,7 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
         MODEL = DDPG_BD
         from olbr.replay_buffer import ReplayBuffer
         from olbr.her_sampler import make_sample_her_transitions 
+        #from olbr.her_sampler import make_sample_her_transitions_multiobj as make_sample_her_transitions 
     elif config['agent_alg'] == 'MADDPG_BD':
         MODEL = MADDPG_BD
         from olbr.replay_buffer import ReplayBuffer_v2 as ReplayBuffer
@@ -185,6 +188,7 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
     #memory initilization  
     if her:
         sample_her_transitions = make_sample_her_transitions('future', 4, her_reward_fun)
+        #sample_her_transitions = make_sample_her_transitions('future', 4, her_reward_fun, config['max_nb_objects'], 3, 0.85)
     else:
         sample_her_transitions = make_sample_her_transitions('none', 4, her_reward_fun)
 
