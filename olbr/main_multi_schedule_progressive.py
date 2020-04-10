@@ -153,16 +153,19 @@ def init(config, agent='robot', her=False,
     model.n_objects = config['max_nb_objects']
 
     class NormalizerObj(object):
-        def __init__(self, mean, std):
+        def __init__(self, mean, std, epsilon=1e-5):
             self.mean = mean
             self.std = std
+            self.epsilon = epsilon
 
         def process(self, achieved, desired, step):
             achieved_out = achieved - K.tensor(self.mean[0], dtype=achieved.dtype, device=achieved.device)
-            achieved_out /= K.tensor(self.std[0], dtype=achieved.dtype, device=achieved.device)
+            achieved_out /= (K.tensor(self.std[0], dtype=achieved.dtype, device=achieved.device) + \
+                             K.tensor(self.epsilon, dtype=achieved.dtype, device=achieved.device))
 
             desired_out = desired - K.tensor(self.mean[1], dtype=desired.dtype, device=desired.device)
-            desired_out /= K.tensor(self.std[1], dtype=desired.dtype, device=desired.device)
+            desired_out /= (K.tensor(self.std[1], dtype=desired.dtype, device=desired.device) + \
+                            K.tensor(self.epsilon, dtype=desired.dtype, device=desired.device))
 
             step_out = step - K.tensor(self.mean[2], dtype=desired.dtype, device=desired.device)
             step_out /= K.tensor(self.std[2], dtype=desired.dtype, device=desired.device)
