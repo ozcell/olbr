@@ -71,15 +71,15 @@ for env_name in env_name_list:
     for i_exp in range(int(exp_config['start_n_exp']), int(exp_config['n_exp'])):
         
         if env_name == 'FetchPushObstacleSideGapMulti-v1':
-            path = './ObT_models/obj/push_side_7d_25ep/
+            path = './ObT_models/obj/push_side_7d_25ep/'
         elif env_name == 'FetchPushObstacleMiddleGapMulti-v1':
-            path = './ObT_models/obj/push_middle_7d_25ep/
+            path = './ObT_models/obj/push_middle_7d_25ep/'
         elif env_name == 'FetchPushObstacleDoubleGapMulti-v1':
-            path = './ObT_models/obj/push_double_7d_50ep/
+            path = './ObT_models/obj/push_double_7d_50ep/'
         elif env_name == 'FetchPickAndPlaceShelfMulti-v1':
-            path = './ObT_models/obj/pnp_shelf_7d_25ep/
+            path = './ObT_models/obj/pnp_shelf_7d_25ep/'
         elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
-            path = './ObT_models/obj/pnp_obstacle_7d_25ep/
+            path = './ObT_models/obj/pnp_obstacle_7d_25ep/'
         print('loading object trajectory model')
         print(path)
 
