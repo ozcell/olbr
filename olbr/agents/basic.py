@@ -676,3 +676,33 @@ class RandomNetDist(nn.Module):
         x = self.FC(x)
 
         return x
+
+
+class TrajectoryDyn(nn.Module):
+    def __init__(self, goal_space):
+        super(TrajectoryDyn, self).__init__()
+        
+        input_size = goal_space*2+1
+        hidden_size = 512
+        output_size = goal_space
+
+        BN = nn.BatchNorm1d(input_size)
+        BN.weight.data.fill_(1)
+        BN.bias.data.fill_(0)
+
+        self.FC = nn.Sequential(#BN,
+                                nn.Linear(input_size, hidden_size), nn.ReLU(True),
+                                #nn.Dropout(0.5),
+                                nn.Linear(hidden_size, hidden_size), nn.ReLU(True),
+                                #nn.Dropout(0.5),
+                                nn.Linear(hidden_size, hidden_size), nn.ReLU(True),
+                                #nn.Dropout(0.5),
+                                nn.Linear(hidden_size, output_size))
+        
+
+    def forward(self, ag, g, ts):
+
+        x = K.cat([ag, g, ts], dim=1)
+        x = self.FC(x)
+
+        return x
