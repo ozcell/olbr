@@ -185,14 +185,14 @@ for env_name in env_name_list:
         rob_name = env_name
         if obj_rew:
             if use_her:
-                rob_name = rob_name + '_DDPG_SLDR_HER_'
+                rob_name = rob_name + '_SLDR_HER_'
             else:
-                rob_name = rob_name + '_DDPG_SLDR_'
+                rob_name = rob_name + '_SLDR_'
         else:
             if use_her:
-                rob_name = rob_name + '_DDPG_HER_'
+                rob_name = rob_name + '_HER_'
             else:
-                rob_name = rob_name + '_DDPG_'
+                rob_name = rob_name + '_'
 
 
         if use_rnd:
