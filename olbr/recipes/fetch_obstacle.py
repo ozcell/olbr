@@ -6,8 +6,8 @@ import torch as K
 
 from olbr.utils import get_params as get_params, running_mean, get_exp_params
 from olbr.main import init, run
-from olbr.main_q import init as init_q
-from olbr.main_q import run as run_q
+from olbr.main_q_v2 import init as init_q
+from olbr.main_q_v2 import run as run_q
 from olbr.main_q_rnd import init as init_q_rnd
 from olbr.main_q_rnd import run as run_q_rnd
 import matplotlib.pyplot as plt
@@ -17,8 +17,6 @@ import pickle
 import sys
 import olbr
 
-#for compatibility to the name change
-sys.modules['her.experience'] = olbr.experience
 
 K.set_num_threads(1)
 
@@ -36,14 +34,22 @@ else:
 
 suffix = 'Dense' if use_dist else ''
 
-if exp_config['env'] == 'Push':
-     env_name_list = ['FetchPushMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnP':
-     env_name_list = ['FetchPickAndPlaceMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'Slide':
-     env_name_list = ['FetchSlideMulti{}-v1'.format(suffix)]
+if exp_config['env'] == 'PushSide':
+     env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PushMiddle':
+     env_name_list = ['FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PushDouble':
+     env_name_list = ['FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnPShelf':
+     env_name_list = ['FetchPickAndPlaceShelfMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnPObstacle':
+     env_name_list = ['FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'All':
-     env_name_list = ['FetchPushMulti{}-v1'.format(suffix), 'FetchPickAndPlaceMulti{}-v1'.format(suffix), 'FetchSlideMulti{}-v1'.format(suffix)]
+     env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix), 
+                      'FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix), 
+                      'FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceShelfMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix)]
 
 for env_name in env_name_list:
 
@@ -58,6 +64,13 @@ for env_name in env_name_list:
         use_rnd = True
     else:
         use_rnd = False
+
+    if env_name == 'FetchPushObstacleDoubleGapMulti-v1':
+        n_episodes = 200
+        gamma = 0.9875
+    else: 
+        n_episodes = 100
+        gamma = 0.98
 
     for i_exp in range(int(exp_config['start_n_exp']), int(exp_config['n_exp'])):
         if exp_config['obj_rew'] == 'True':
@@ -82,7 +95,7 @@ for env_name in env_name_list:
                     '--max_nb_objects', '1',
                     '--observe_obj_grp', 'False',
                     '--rob_policy', '02',
-                    ]
+                    ]                   
 
             config = get_params(args=exp_args)
             model, experiment_args = init(config, agent='object', her=True, 
@@ -92,12 +105,16 @@ for env_name in env_name_list:
             env, memory, noise, config, normalizer, agent_id = experiment_args
 
             #loading the object model
-            if env_name == 'FetchPushMulti-v1':
-                path = './models_paper/obj/obj_push_7d_20ep/'
-            elif env_name == 'FetchPickAndPlaceMulti-v1':
-                path = './models_paper/obj/obj_pnp_7d_20ep/'
-            elif env_name == 'FetchSlideMulti-v1':
-                path = './models_paper/obj/obj_slide_7d_20ep/'
+            if env_name == 'FetchPushObstacleSideGapMulti-v1':
+                path = './ObT_models/obj/push_side_7d_25ep/
+            elif env_name == 'FetchPushObstacleMiddleGapMulti-v1':
+                path = './ObT_models/obj/push_middle_7d_25ep/
+            elif env_name == 'FetchPushObstacleDoubleGapMulti-v1':
+                path = './ObT_models/obj/push_double_7d_50ep/
+            elif env_name == 'FetchPickAndPlaceShelfMulti-v1':
+                path = './ObT_models/obj/pnp_shelf_7d_25ep/
+            elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
+                path = './ObT_models/obj/pnp_obstacle_7d_25ep/
 
             print('loading object model')
             print(path)
@@ -110,9 +127,9 @@ for env_name in env_name_list:
             experiment_args = (env, memory, noise, config, normalizer, agent_id)
             
             obj_rew = True
-            object_Qfunc = model.critics[0]
-            object_policy = model.actors[0]  
-            backward_dyn = model.backward
+            object_Qfunc = (model.critics[0],)
+            object_policy = (model.actors[0],)  
+            backward_dyn = (model.backward,)
             init_2 = init_q   
             run_2 = run_q
             print("training with object based rewards")
@@ -139,8 +156,8 @@ for env_name in env_name_list:
                 '--agent_alg', model_name,
                 '--verbose', '2',
                 '--render', '0',
-                '--gamma', '0.98',
-                '--n_episodes', '50',
+                '--gamma', str(gamma),
+                '--n_episodes', str(n_episodes),
                 '--n_cycles', '50',
                 '--n_rollouts', '38',
                 '--n_test_rollouts', '380',
@@ -154,7 +171,7 @@ for env_name in env_name_list:
 
         config2 = get_params(args=exp_args2)
         model2, experiment_args2 = init_2(config2, agent='robot', her=use_her, 
-                                        object_Qfunc=object_Qfunc, 
+                                        object_Qfunc=object_Qfunc,
                                         object_policy=object_policy,
                                         backward_dyn=backward_dyn,
                                     )
@@ -168,9 +185,9 @@ for env_name in env_name_list:
         rob_name = env_name
         if obj_rew:
             if use_her:
-                rob_name = rob_name + '_DDPG_OURS_HER_'
+                rob_name = rob_name + '_DDPG_SLDR_HER_'
             else:
-                rob_name = rob_name + '_DDPG_OURS_'
+                rob_name = rob_name + '_DDPG_SLDR_'
         else:
             if use_her:
                 rob_name = rob_name + '_DDPG_HER_'
@@ -184,7 +201,7 @@ for env_name in env_name_list:
         if use_dist:
             rob_name = rob_name + 'DIST_'
 
-        path = './models_paper/batch3/' + rob_name + str(i_exp)
+        path = './ObT_models/batch1/' + rob_name + str(i_exp)
         try:  
             os.makedirs(path)
         except OSError:  
@@ -209,6 +226,6 @@ for env_name in env_name_list:
         with open(path + '/normalizer_best.pkl', 'wb') as file:
             pickle.dump(bestmodel[2], file)
 
-        path = './models_paper/batch3/monitor_' + rob_name + str(i_exp) + '.npy'
+        path = './ObT_models/batch1/monitor_' + rob_name + str(i_exp) + '.npy'
         np.save(path, monitor2)
 
