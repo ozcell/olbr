@@ -10,6 +10,7 @@ from olbr.main_multi_schedule_progressive import init as init_o
 from olbr.main_multi_schedule_progressive import run as run_o
 from olbr.main_q_v3 import init as init_q_o
 from olbr.main_q_v3 import run as run_q_o
+from olbr.basic import TrajectoryDyn
 import matplotlib.pyplot as plt
 
 import os
