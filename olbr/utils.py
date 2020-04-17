@@ -649,15 +649,15 @@ def get_exp_params(args=[], verbose=False):
 
     # positional
     parser.add_argument("--env")
-    parser.add_argument("--rob_model")
-    parser.add_argument("--obj_rew")
-    parser.add_argument("--use_her")
-    parser.add_argument("--n_exp")
-    parser.add_argument("--start_n_exp")
-    parser.add_argument("--change_stack_order")
-    parser.add_argument("--use_step_reward_fun")
-    parser.add_argument("--shaped")
-    parser.add_argument("--use_rnd")
+    parser.add_argument("--rob_model", default="DDPG")
+    parser.add_argument("--obj_rew", default="True")
+    parser.add_argument("--use_her", default="True")
+    parser.add_argument("--n_exp", default="5")
+    parser.add_argument("--start_n_exp", default="0")
+    parser.add_argument("--change_stack_order", default="False")
+    parser.add_argument("--use_step_reward_fun", default="False")
+    parser.add_argument("--shaped", default="False")
+    parser.add_argument("--use_rnd", default="False")
     parser.add_argument("--filepath", default="/home/ok18/Jupyter/notebooks/Reinforcement_Learning/")
 
     # acquire in a dict
