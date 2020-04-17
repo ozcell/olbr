@@ -6,10 +6,10 @@ import torch as K
 
 from olbr.utils import get_params as get_params, running_mean, get_exp_params
 from olbr.main import init, run
-from olbr.main_q_v2 import init as init_q
-from olbr.main_q_v2 import run as run_q
-from olbr.main_q_rnd import init as init_q_rnd
-from olbr.main_q_rnd import run as run_q_rnd
+from olbr.main_multi_schedule_progressive import init as init_o
+from olbr.main_multi_schedule_progressive import run as run_o
+from olbr.main_q_v3 import init as init_q_o
+from olbr.main_q_v3 import run as run_q_o
 import matplotlib.pyplot as plt
 
 import os
@@ -60,11 +60,6 @@ for env_name in env_name_list:
         use_her = False
         print("training without HER")
 
-    if exp_config['use_rnd'] == 'True':
-        use_rnd = True
-    else:
-        use_rnd = False
-
     if env_name == 'FetchPushObstacleDoubleGapMulti-v1':
         n_episodes = 200
         gamma = 0.9875
@@ -73,6 +68,27 @@ for env_name in env_name_list:
         gamma = 0.98
 
     for i_exp in range(int(exp_config['start_n_exp']), int(exp_config['n_exp'])):
+        
+        if env_name == 'FetchPushObstacleSideGapMulti-v1':
+            path = './ObT_models/obj/push_side_7d_25ep/
+        elif env_name == 'FetchPushObstacleMiddleGapMulti-v1':
+            path = './ObT_models/obj/push_middle_7d_25ep/
+        elif env_name == 'FetchPushObstacleDoubleGapMulti-v1':
+            path = './ObT_models/obj/push_double_7d_50ep/
+        elif env_name == 'FetchPickAndPlaceShelfMulti-v1':
+            path = './ObT_models/obj/pnp_shelf_7d_25ep/
+        elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
+            path = './ObT_models/obj/pnp_obstacle_7d_25ep/
+        print('loading object trajectory model')
+        print(path)
+
+        obj_traj = TrajectoryDyn(3).to(device)
+        obj_traj.load_state_dict(K.load(path + 'objGoal_model.pt'))
+        with open(path + 'objGoal_mean.pkl', 'rb') as file:
+            obj_mean = pickle.load(file)
+        with open(path + 'objGoal_std.pkl', 'rb') as file:
+            obj_std = pickle.load(file)
+
         if exp_config['obj_rew'] == 'True':
         ####################### loading object ###########################
 
@@ -105,17 +121,6 @@ for env_name in env_name_list:
             env, memory, noise, config, normalizer, agent_id = experiment_args
 
             #loading the object model
-            if env_name == 'FetchPushObstacleSideGapMulti-v1':
-                path = './ObT_models/obj/push_side_7d_25ep/
-            elif env_name == 'FetchPushObstacleMiddleGapMulti-v1':
-                path = './ObT_models/obj/push_middle_7d_25ep/
-            elif env_name == 'FetchPushObstacleDoubleGapMulti-v1':
-                path = './ObT_models/obj/push_double_7d_50ep/
-            elif env_name == 'FetchPickAndPlaceShelfMulti-v1':
-                path = './ObT_models/obj/pnp_shelf_7d_25ep/
-            elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
-                path = './ObT_models/obj/pnp_obstacle_7d_25ep/
-
             print('loading object model')
             print(path)
             model.critics[0].load_state_dict(K.load(path + 'object_Qfunc.pt'))
@@ -130,8 +135,8 @@ for env_name in env_name_list:
             object_Qfunc = (model.critics[0],)
             object_policy = (model.actors[0],)  
             backward_dyn = (model.backward,)
-            init_2 = init_q   
-            run_2 = run_q
+            init_2 = init_q_o   
+            run_2 = run_q_o
             print("training with object based rewards")
         ####################### loading object ###########################
         elif exp_config['obj_rew'] == 'False':
@@ -139,15 +144,9 @@ for env_name in env_name_list:
             object_Qfunc = None
             object_policy = None  
             backward_dyn = None
+            init_2 = init_o
+            run_2 = run_o
             print("training without object based rewards")
-            if use_rnd:
-                init_2 = init_q_rnd
-                run_2 = run_q_rnd
-                print("training with RND rewards")
-            else:
-                init_2 = init
-                run_2 = run
-
         ####################### training robot ###########################  
         model_name = 'DDPG_BD'
         exp_args2=['--env_id', env_name,
@@ -170,33 +169,37 @@ for env_name in env_name_list:
                 ]
 
         config2 = get_params(args=exp_args2)
-        model2, experiment_args2 = init_2(config2, agent='robot', her=use_her, 
-                                        object_Qfunc=object_Qfunc,
-                                        object_policy=object_policy,
-                                        backward_dyn=backward_dyn,
-                                    )
-        env2, memory2, noise2, config2, normalizer2, running_rintr_mean2 = experiment_args2
         if obj_rew:
+            model2, experiment_args2 = init_2(config2, agent='robot', her=use_her, 
+                                            object_Qfunc=object_Qfunc,
+                                            object_policy=object_policy,
+                                            backward_dyn=backward_dyn,
+                                            obj_traj=obj_traj,
+                                            obj_mean=obj_mean,
+                                            obj_std=obj_std
+                                        )
+            env2, memory2, noise2, config2, normalizer2, running_rintr_mean2 = experiment_args2
             normalizer2[1] = normalizer[1]
-        experiment_args2 = (env2, memory2, noise2, config2, normalizer2, running_rintr_mean2)
-
+            experiment_args2 = (env2, memory2, noise2, config2, normalizer2, running_rintr_mean2)
+        else:
+            model2, experiment_args2 = init_2(config2, agent='robot', her=use_her, 
+                                            obj_traj=obj_traj,
+                                            obj_mean=obj_mean,
+                                            obj_std=obj_std
+                                        )
         monitor2, bestmodel = run_2(model2, experiment_args2, train=True)
 
         rob_name = env_name
         if obj_rew:
             if use_her:
-                rob_name = rob_name + '_DDPG_SLDR_HER_'
+                rob_name = rob_name + '_OTR_SLDR_HER_'
             else:
-                rob_name = rob_name + '_DDPG_SLDR_'
+                rob_name = rob_name + '_OTR_SLDR_'
         else:
             if use_her:
-                rob_name = rob_name + '_DDPG_HER_'
+                rob_name = rob_name + '_OTR_HER_'
             else:
-                rob_name = rob_name + '_DDPG_'
-
-
-        if use_rnd:
-            rob_name = rob_name + 'RND_'
+                rob_name = rob_name + '_OTR_'
 
         if use_dist:
             rob_name = rob_name + 'DIST_'
