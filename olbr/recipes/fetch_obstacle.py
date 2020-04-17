@@ -106,17 +106,15 @@ for env_name in env_name_list:
 
             #loading the object model
             if env_name == 'FetchPushObstacleSideGapMulti-v1':
-                path = './ObT_models/obj/push_side_7d_25ep/'
+                path = './ObT_models/obj/push_side_7d_ep25/'
             elif env_name == 'FetchPushObstacleMiddleGapMulti-v1':
-                path = './ObT_models/obj/push_middle_7d_25ep/'
+                path = './ObT_models/obj/push_middle_7d_ep25/'
             elif env_name == 'FetchPushObstacleDoubleGapMulti-v1':
-                path = './ObT_models/obj/push_double_7d_50ep/'
+                path = './ObT_models/obj/push_double_7d_ep50/'
             elif env_name == 'FetchPickAndPlaceShelfMulti-v1':
-                path = './ObT_models/obj/pnp_shelf_7d_25ep/'
+                path = './ObT_models/obj/pnp_shelf_7d_ep25/'
             elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
-                path = './ObT_models/obj/pnp_obstacle_7d_25ep/'
-            print('loading object trajectory model')
-            print(path)
+                path = './ObT_models/obj/pnp_obstacle_7d_ep25/'
 
             print('loading object model')
             print(path)
@@ -131,7 +129,7 @@ for env_name in env_name_list:
             obj_rew = True
             object_Qfunc = (model.critics[0],)
             object_policy = (model.actors[0],)  
-            backward_dyn = (model.backward,)
+            object_inverse = (model.backward,)
             init_2 = init_q   
             run_2 = run_q
             print("training with object based rewards")
@@ -172,11 +170,18 @@ for env_name in env_name_list:
                 ]
 
         config2 = get_params(args=exp_args2)
-        model2, experiment_args2 = init_2(config2, agent='robot', her=use_her, 
-                                        object_Qfunc=object_Qfunc,
-                                        object_policy=object_policy,
-                                        backward_dyn=backward_dyn,
-                                    )
+        if obj_rew:
+            model2, experiment_args2 = init_2(config2, agent='robot', her=use_her, 
+                                            object_Qfunc=object_Qfunc,
+                                            object_policy=object_policy,
+                                            object_inverse=object_inverse,
+                                        )
+        else:
+            model2, experiment_args2 = init_2(config2, agent='robot', her=use_her, 
+                                            object_Qfunc=object_Qfunc,
+                                            object_policy=object_policy,
+                                            backward_dyn=backward_dyn,
+                                        )            
         env2, memory2, noise2, config2, normalizer2, running_rintr_mean2 = experiment_args2
         if obj_rew:
             normalizer2[1] = normalizer[1]
@@ -218,9 +223,9 @@ for env_name in env_name_list:
         K.save(bestmodel[1], path + '/robot_policy_best.pt')
 
         if obj_rew:
-            K.save(model2.object_Qfunc.state_dict(), path + '/object_Qfunc.pt')
-            K.save(model2.backward.state_dict(), path + '/backward_dyn.pt')
-            K.save(model2.object_policy.state_dict(), path + '/object_policy.pt')
+            K.save(model2.object_Qfunc[0].state_dict(), path + '/object_Qfunc.pt')
+            K.save(model2.object_inverse[0].state_dict(), path + '/backward_dyn.pt')
+            K.save(model2.object_policy[0].state_dict(), path + '/object_policy.pt')
         
         with open(path + '/normalizer.pkl', 'wb') as file:
             pickle.dump(normalizer2, file)

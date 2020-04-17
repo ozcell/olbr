@@ -10,7 +10,7 @@ from olbr.main_multi_schedule_progressive import init as init_o
 from olbr.main_multi_schedule_progressive import run as run_o
 from olbr.main_q_v3 import init as init_q_o
 from olbr.main_q_v3 import run as run_q_o
-from olbr.basic import TrajectoryDyn
+from olbr.agents.basic import TrajectoryDyn
 import matplotlib.pyplot as plt
 
 import os
@@ -71,15 +71,15 @@ for env_name in env_name_list:
     for i_exp in range(int(exp_config['start_n_exp']), int(exp_config['n_exp'])):
         
         if env_name == 'FetchPushObstacleSideGapMulti-v1':
-            path = './ObT_models/obj/push_side_7d_25ep/'
+            path = './ObT_models/obj/push_side_7d_ep25/'
         elif env_name == 'FetchPushObstacleMiddleGapMulti-v1':
-            path = './ObT_models/obj/push_middle_7d_25ep/'
+            path = './ObT_models/obj/push_middle_7d_ep25/'
         elif env_name == 'FetchPushObstacleDoubleGapMulti-v1':
-            path = './ObT_models/obj/push_double_7d_50ep/'
+            path = './ObT_models/obj/push_double_7d_ep50/'
         elif env_name == 'FetchPickAndPlaceShelfMulti-v1':
-            path = './ObT_models/obj/pnp_shelf_7d_25ep/'
+            path = './ObT_models/obj/pnp_shelf_7d_ep25/'
         elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
-            path = './ObT_models/obj/pnp_obstacle_7d_25ep/'
+            path = './ObT_models/obj/pnp_obstacle_7d_ep25/'
         print('loading object trajectory model')
         print(path)
 
@@ -135,7 +135,7 @@ for env_name in env_name_list:
             obj_rew = True
             object_Qfunc = (model.critics[0],)
             object_policy = (model.actors[0],)  
-            backward_dyn = (model.backward,)
+            object_inverse = (model.backward,)
             init_2 = init_q_o   
             run_2 = run_q_o
             print("training with object based rewards")
@@ -174,7 +174,7 @@ for env_name in env_name_list:
             model2, experiment_args2 = init_2(config2, agent='robot', her=use_her, 
                                             object_Qfunc=object_Qfunc,
                                             object_policy=object_policy,
-                                            backward_dyn=backward_dyn,
+                                            object_inverse=object_inverse,
                                             obj_traj=obj_traj,
                                             obj_mean=obj_mean,
                                             obj_std=obj_std
@@ -188,6 +188,7 @@ for env_name in env_name_list:
                                             obj_mean=obj_mean,
                                             obj_std=obj_std
                                         )
+            env2, memory2, noise2, config2, normalizer2, running_rintr_mean2 = experiment_args2
         monitor2, bestmodel = run_2(model2, experiment_args2, train=True)
 
         rob_name = env_name
@@ -220,15 +221,15 @@ for env_name in env_name_list:
         K.save(bestmodel[1], path + '/robot_policy_best.pt')
 
         if obj_rew:
-            K.save(model2.object_Qfunc.state_dict(), path + '/object_Qfunc.pt')
-            K.save(model2.backward.state_dict(), path + '/backward_dyn.pt')
-            K.save(model2.object_policy.state_dict(), path + '/object_policy.pt')
+            K.save(model2.object_Qfunc[0].state_dict(), path + '/object_Qfunc.pt')
+            K.save(model2.object_inverse[0].state_dict(), path + '/backward_dyn.pt')
+            K.save(model2.object_policy[0].state_dict(), path + '/object_policy.pt')
         
         with open(path + '/normalizer.pkl', 'wb') as file:
-            pickle.dump(normalizer2, file)
+            pickle.dump(normalizer2[0:2], file)
 
         with open(path + '/normalizer_best.pkl', 'wb') as file:
-            pickle.dump(bestmodel[2], file)
+            pickle.dump(bestmodel[2][0:2], file)
 
         path = './ObT_models/batch1/monitor_' + rob_name + str(i_exp) + '.npy'
         np.save(path, monitor2)
