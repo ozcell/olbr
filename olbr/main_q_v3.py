@@ -25,13 +25,18 @@ import matplotlib.pyplot as plt
 
 from baselines.common.vec_env.subproc_vec_env import SubprocVecEnv
 
+from gym_wmgds.envs.robotics import rotations
+
 device = K.device("cuda" if K.cuda.is_available() else "cpu")
 dtype = K.float32
 
 def init(config, agent='robot', her=False, object_Qfunc=None, 
                                            object_inverse=None, 
                                            object_policy=None, 
-                                           reward_fun=None):
+                                           reward_fun=None,
+                                           obj_traj=None,
+                                           obj_mean=None,
+                                           obj_std=None):
         
     #hyperparameters
     ENV_NAME = config['env_id'] 
@@ -62,6 +67,7 @@ def init(config, agent='robot', her=False, object_Qfunc=None,
                                     observe_obj_grp=config['observe_obj_grp'],
                                     obj_range=config['obj_range'])
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch') for i_env in range(N_ENVS)])
+        envs_test = None
         envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch') for i_env in range(1)])
         n_rob_actions = 4
         n_actions = config['max_nb_objects'] * len(config['obj_action_type']) + n_rob_actions
@@ -71,18 +77,21 @@ def init(config, agent='robot', her=False, object_Qfunc=None,
                                     observe_obj_grp=config['observe_obj_grp'],
                                     obj_range=config['obj_range'])
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch') for i_env in range(N_ENVS)])
+        envs_test = None
         envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch') for i_env in range(1)])
         n_rob_actions = 4
         n_actions = 2 * len(config['obj_action_type']) + n_rob_actions
     elif 'HandManipulate' in ENV_NAME and 'Multi' in ENV_NAME:
         dummy_env = gym.make(ENV_NAME, obj_action_type=config['obj_action_type'])
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Hand') for i_env in range(N_ENVS)])
+        envs_test = None
         envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Hand') for i_env in range(1)])
         n_rob_actions = 20
         n_actions = 1 * len(config['obj_action_type']) + n_rob_actions
     else:
         dummy_env = gym.make(ENV_NAME)
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Others') for i_env in range(N_ENVS)])
+        envs_test = None
         envs_render = None
 
     def her_reward_fun(ag_2, g, info):  # vectorized
@@ -137,18 +146,46 @@ def init(config, agent='robot', her=False, object_Qfunc=None,
     for _ in range(len(model.object_Qfunc)+1):
         normalizer.append(Normalizer())
 
+    model.n_objects = config['max_nb_objects']
+
+    class NormalizerObj(object):
+        def __init__(self, mean, std, epsilon=1e-5):
+            self.mean = mean
+            self.std = std
+            self.epsilon = epsilon
+
+        def process(self, achieved, desired, step):
+            achieved_out = achieved - K.tensor(self.mean[0], dtype=achieved.dtype, device=achieved.device)
+            achieved_out /= (K.tensor(self.std[0], dtype=achieved.dtype, device=achieved.device) + \
+                             K.tensor(self.epsilon, dtype=achieved.dtype, device=achieved.device))
+
+            desired_out = desired - K.tensor(self.mean[1], dtype=desired.dtype, device=desired.device)
+            desired_out /= (K.tensor(self.std[1], dtype=desired.dtype, device=desired.device) + \
+                            K.tensor(self.epsilon, dtype=desired.dtype, device=desired.device))
+
+            step_out = step - K.tensor(self.mean[2], dtype=desired.dtype, device=desired.device)
+            step_out /= K.tensor(self.std[2], dtype=desired.dtype, device=desired.device)
+
+            return achieved_out, desired_out, step_out
+
+    normalizer.append(NormalizerObj(obj_mean, obj_std))
+
+    model.obj_traj = obj_traj.to('cuda')
+    model.obj_traj.eval()
+
     for _ in range(1):
         state_all = dummy_env.reset()
-        for _ in range(config['episode_length']):
+        for i_step in range(config['episode_length']):
 
             model.to_cpu()
 
             obs = [K.tensor(obs, dtype=K.float32).unsqueeze(0) for obs in state_all['observation']]
             goal = K.tensor(state_all['desired_goal'], dtype=K.float32).unsqueeze(0)
-
+            if i_step == 0:
+                objtraj_goal = goal
             # Observation normalization
             obs_goal = []
-            obs_goal.append(K.cat([obs[0], goal], dim=-1))
+            obs_goal.append(K.cat([obs[0], objtraj_goal], dim=-1))
             if normalizer[0] is not None:
                 obs_goal[0] = normalizer[0].preprocess_with_update(obs_goal[0])
 
@@ -176,9 +213,9 @@ def init(config, agent='robot', her=False, object_Qfunc=None,
         }
     memory = ReplayBuffer(buffer_shapes, MEM_SIZE, config['episode_length'], sample_her_transitions)
 
-    experiment_args = ((envs, envs_render), memory, noise, config, normalizer, None)
+    experiment_args = ((envs, envs_test, envs_render), memory, noise, config, normalizer, None)
 
-    print('no normaliser update') 
+    print("0.20 - 0.25 - boundary_sample iff original_goal update norm")
 
     return model, experiment_args
 
@@ -195,7 +232,7 @@ def back_to_dict(state, config):
 
     return state_dict
 
-def rollout(env, model, noise, config, normalizer=None, render=False):
+def rollout(env, model, noise, config, normalizer=None, render=False, step=(1,5), boundary_sample=False):
     trajectories = []
     for i_agent in range(2):
         trajectories.append([])
@@ -204,26 +241,54 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
     episode_reward = np.zeros(env.num_envs)
     frames = []
     
-    #env[i_env].env.ai_object = False
-    #env[i_env].env.deactivate_ai_object() 
     state_all = env.reset()
     state_all = back_to_dict(state_all, config)
 
+    step_l, step_h = step
     for i_step in range(config['episode_length']):
 
         model.to_cpu()
 
         obs = [K.tensor(obs, dtype=K.float32) for obs in state_all['observation']]
         goal = K.tensor(state_all['desired_goal'], dtype=K.float32)
+        if i_step == 0:
+            if (np.random.rand() < 0.20 and not boundary_sample) or (step_h >= config['episode_length']):
+                objtraj_goal = goal
+                original_goal = True
+            else:
+                original_goal = False
+                achieved_goal = K.tensor(state_all['achieved_goal'], dtype=K.float32)
 
+                objtraj_goal = []
+                goal_len_per_obj = goal.shape[1]//model.n_objects
+                for i_object in range(model.n_objects):
+                    
+                    achieved_goal_per_obj = achieved_goal[:,i_object*goal_len_per_obj:(i_object+1)*goal_len_per_obj]
+                    goal_per_obj = goal[:,i_object*goal_len_per_obj:(i_object+1)*goal_len_per_obj]
+
+                    normed_achieved_goal_per_obj, normed_goal_per_goal, normed_step = normalizer[2].process(achieved_goal_per_obj, 
+                                                                                                            goal_per_obj, 
+                                                                                                            K.randint(low=step_l,high=step_h+1,size=(achieved_goal_per_obj.shape[0],1)))
+                    with K.no_grad():
+                        objtraj_goal_per_obj = model.obj_traj(normed_achieved_goal_per_obj.to('cuda'), 
+                                                              normed_goal_per_goal.to('cuda'), 
+                                                              normed_step.to('cuda'))
+
+                    objtraj_goal.append(objtraj_goal_per_obj.cpu())
+                objtraj_goal = K.cat(objtraj_goal, dim=-1)
+ 
         # Observation normalization
         obs_goal = []
-        obs_goal.append(K.cat([obs[0], goal], dim=-1))
+        obs_goal.append(K.cat([obs[0], objtraj_goal], dim=-1))
         if normalizer[0] is not None:
+            #if not original_goal:
+            #    obs_goal[0] = normalizer[0].preprocess(obs_goal[0])
+            #else:
             obs_goal[0] = normalizer[0].preprocess_with_update(obs_goal[0])
         
         for i_agent in range(1, len(model.object_Qfunc)+1):
-            obs_goal.append(K.cat([obs[1], goal], dim=-1))
+            obs_goal.append(K.cat([obs[1], objtraj_goal], dim=-1))
+            # OR # obs_goal.append(K.cat([obs[1], goal], dim=-1))
             if normalizer[i_agent] is not None:
                 obs_goal[i_agent] = normalizer[i_agent].preprocess(obs_goal[i_agent])
 
@@ -240,12 +305,12 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
         
         # Observation normalization
         next_obs_goal = []
-        next_obs_goal.append(K.cat([next_obs[0], goal], dim=-1))
+        next_obs_goal.append(K.cat([next_obs[0], objtraj_goal], dim=-1))
         if normalizer[0] is not None:
             next_obs_goal[0] = normalizer[0].preprocess(next_obs_goal[0])
 
         for i_agent in range(1, len(model.object_Qfunc)+1):
-            next_obs_goal.append(K.cat([next_obs[1], goal], dim=-1))
+            next_obs_goal.append(K.cat([next_obs[1], objtraj_goal], dim=-1))
             if normalizer[i_agent] is not None:
                 next_obs_goal[i_agent] = normalizer[i_agent].preprocess(next_obs_goal[i_agent])
 
@@ -260,17 +325,19 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
 
         for i_agent in range(2):
             state = {
-                'observation'   : state_all['observation'][i_agent],
-                'achieved_goal' : state_all['achieved_goal'],
-                'desired_goal'  : state_all['desired_goal']   
-                }
-            next_state = {
-                'observation'   : next_state_all['observation'][i_agent],
-                'achieved_goal' : next_state_all['achieved_goal'],
-                'desired_goal'  : next_state_all['desired_goal']    
+                'observation'   : state_all['observation'][i_agent].copy(),
+                'achieved_goal' : state_all['achieved_goal'].copy(),
+                'desired_goal'  : objtraj_goal.numpy().copy()
                 }
             
-            trajectories[i_agent].append((state.copy(), action_to_env, reward, next_state.copy(), done))
+            trajectories[i_agent].append((state.copy(), action_to_env, reward))
+
+        goal_a = state_all['achieved_goal']
+        goal_b = objtraj_goal.numpy().copy()#state_all['desired_goal']
+        ENV_NAME = config['env_id'] 
+        if 'Rotate' in ENV_NAME:
+            quat_a = goal_a[:,3:]
+            quat_b = goal_b[:,3:]
 
         # Move to the next state
         state_all = next_state_all
@@ -278,6 +345,17 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
         # Record frames
         if render:
             frames.append(env.render(mode='rgb_array')[0])
+
+    if 'Rotate' in ENV_NAME:
+        # Subtract quaternions and extract angle between them.
+        quat_diff = rotations.quat_mul(quat_a, rotations.quat_conjugate(quat_b))
+        angle_diff = 2 * np.arccos(np.clip(quat_diff[..., 0], -1., 1.))
+        d_rot = angle_diff
+        distance = (d_rot < 0.1).astype(np.float32)
+    else:
+        distance = np.linalg.norm(goal_a - goal_b, axis=-1)
+        distance = (distance < 0.05).astype(np.float32)
+    
 
     obs, ags, goals, acts = [], [], [], []
 
@@ -302,14 +380,16 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
 
     info = np.asarray([i_info['is_success'] for i_info in info])
 
-    return trajectories, episode_reward, info, frames
+    return trajectories, episode_reward, info, distance
 
 def run(model, experiment_args, train=True):
 
     total_time_start =  time.time()
 
     envs, memory, noise, config, normalizer, _ = experiment_args
-    envs_train, envs_render = envs
+    envs_train, envs_test, envs_render = envs
+    if envs_test is None:
+        envs_test = envs_train
     
     N_EPISODES = config['n_episodes'] if train else config['n_episodes_test']
     N_CYCLES = config['n_cycles']
@@ -319,22 +399,34 @@ def run(model, experiment_args, train=True):
     
     episode_reward_all = []
     episode_success_all = []
+    episode_distance_all = []
     episode_reward_mean = []
     episode_success_mean = []
+    episode_distance_mean = []
     critic_losses = []
     actor_losses = []
 
     best_succeess = -1
+
+    obj_traj_step = 1
         
     for i_episode in range(N_EPISODES):
         
-        episode_time_start = time.time()
+        episode_time_start = time.time()        
+        episode_reward_cycle_train = []
+        episode_succeess_cycle_train = []
+        episode_distance_cycle_train = []
         if train:
             for i_cycle in range(N_CYCLES):
                 
-                trajectories, _, _, _ = rollout(envs_train, model, noise, config, normalizer, render=False)
+                trajectories, episode_reward, success, distance = rollout(envs_train, model, noise, config, normalizer, render=False,
+                                                                   step=(1, obj_traj_step))
                 memory.store_episode(trajectories.copy())   
-              
+
+                episode_reward_cycle_train.extend(episode_reward)
+                episode_succeess_cycle_train.extend(success)
+                episode_distance_cycle_train.extend(distance)
+
                 for i_batch in range(N_BATCHES):  
                     model.to_cuda()
 
@@ -346,31 +438,44 @@ def run(model, experiment_args, train=True):
 
                 model.update_target()
 
+                _, _, _, success = rollout(envs_train, model, False, config, normalizer=normalizer, render=False, 
+                                                            step=(obj_traj_step, obj_traj_step),boundary_sample=True)
+
+                if success.mean() >= 0.25 and obj_traj_step < config['episode_length']:
+                    obj_traj_step += 1
+                    print(obj_traj_step)
+
             # <-- end loop: i_cycle
         plot_durations(np.asarray(critic_losses), np.asarray(actor_losses))
 
         episode_reward_cycle = []
         episode_succeess_cycle = []
+        episode_distance_cycle = []
         rollout_per_env = N_TEST_ROLLOUTS // config['n_envs']
         for i_rollout in range(rollout_per_env):
             render = config['render'] == 2 and i_episode % config['render'] == 0
-            _, episode_reward, success, _ = rollout(envs_train, model, False, config, normalizer=normalizer, render=render)
+            _, episode_reward, success, distance = rollout(envs_test, model, False, config, normalizer=normalizer, render=render, 
+                                                           step=(1,config['episode_length']))
                 
             episode_reward_cycle.extend(episode_reward)
             episode_succeess_cycle.extend(success)
+            episode_distance_cycle.extend(distance)
 
         render = (config['render'] == 1) and (i_episode % config['render'] == 0) and (envs_render is not None)
         if render:
             for i_rollout in range(10):
-                _, episode_reward, success, _ = rollout(envs_render, model, False, config, normalizer=normalizer, render=render)
+                _, _, _, _ = rollout(envs_render, model, False, config, normalizer=normalizer, render=render, 
+                                     step=(1,config['episode_length']))
         # <-- end loop: i_rollout 
             
         ### MONITORIRNG ###
         episode_reward_all.append(episode_reward_cycle)
         episode_success_all.append(episode_succeess_cycle)
+        episode_distance_all.append(episode_distance_cycle)
 
         episode_reward_mean.append(np.mean(episode_reward_cycle))
         episode_success_mean.append(np.mean(episode_succeess_cycle))
+        episode_distance_mean.append(np.mean(episode_distance_cycle))
         plot_durations(np.asarray(episode_reward_mean), np.asarray(episode_success_mean))
 
         if best_succeess < np.mean(episode_succeess_cycle):
@@ -387,8 +492,12 @@ def run(model, experiment_args, train=True):
                 print('  | Exp description: {}'.format(config['exp_descr']))
                 print('  | Env: {}'.format(config['env_id']))
                 print('  | Process pid: {}'.format(config['process_pid']))
+                print('  | Running mean of total reward - training: {}'.format(np.mean(episode_reward_cycle_train)))
+                print('  | Success rate - training: {}'.format(np.mean(episode_succeess_cycle_train)))
+                print('  | Distance - training: {}'.format(np.mean(episode_distance_cycle_train)))
                 print('  | Running mean of total reward: {}'.format(episode_reward_mean[-1]))
                 print('  | Success rate: {}'.format(episode_success_mean[-1]))
+                print('  | Distance to target {}'.format(episode_distance_mean[-1]))
                 print('  | Time episode: {}'.format(time.time()-episode_time_start))
                 print('  | Time total: {}'.format(time.time()-total_time_start))
             

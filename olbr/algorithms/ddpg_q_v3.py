@@ -39,6 +39,8 @@ class DDPG_BD(object):
         self.normalized_rewards = normalized_rewards
         self.dtype = dtype
         self.device = device
+        if isinstance(observation_space, (list, tuple)):
+            observation_space = observation_space[0]
         self.observation_space = observation_space
         self.action_space = action_space
         self.agent_id = agent_id
