@@ -60,7 +60,10 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
                                     observe_obj_grp=config['observe_obj_grp'],
                                     obj_range=config['obj_range'])
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)])
-        envs_test = SubprocVecEnv([make_env('FetchPickAndPlaceMulti-v1', i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)])
+        if 'Dense' in ENV_NAME:
+            envs_test = SubprocVecEnv([make_env('FetchPickAndPlaceMultiDense-v1', i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)])
+        else:
+            envs_test = SubprocVecEnv([make_env('FetchPickAndPlaceMulti-v1', i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)])
         envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', agent == 'object') for i_env in range(1)])
         n_rob_actions = 4
         n_actions = config['max_nb_objects'] * len(config['obj_action_type']) + n_rob_actions
@@ -482,7 +485,8 @@ def run(model, experiment_args, train=True):
     else:
         print('Test completed')
 
-    return (episode_reward_all, episode_success_all, episode_distance_all), (bestmodel_critic, bestmodel_actor, bestmodel_normalizer)
+    return (episode_reward_all, episode_success_all, episode_distance_all, episode_success_all_2, episode_distance_all_2), 
+    (bestmodel_critic, bestmodel_actor, bestmodel_normalizer)
 
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
