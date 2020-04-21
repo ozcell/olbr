@@ -485,8 +485,7 @@ def run(model, experiment_args, train=True):
     else:
         print('Test completed')
 
-    return (episode_reward_all, episode_success_all, episode_distance_all, episode_success_all_2, episode_distance_all_2), 
-    (bestmodel_critic, bestmodel_actor, bestmodel_normalizer)
+    return (episode_reward_all, episode_success_all, episode_distance_all, episode_success_all_2, episode_distance_all_2), (bestmodel_critic, bestmodel_actor, bestmodel_normalizer)
 
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
