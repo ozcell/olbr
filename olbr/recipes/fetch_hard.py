@@ -6,8 +6,8 @@ import torch as K
 
 from olbr.utils import get_params as get_params, running_mean, get_exp_params
 from olbr.main_hard import init, run
-from olbr.main_q_v2 import init as init_q
-from olbr.main_q_v2 import run as run_q
+from olbr.main_q_v2_hard import init as init_q
+from olbr.main_q_v2_hard import run as run_q
 from olbr.main_q_rnd import init as init_q_rnd
 from olbr.main_q_rnd import run as run_q_rnd
 import matplotlib.pyplot as plt
