@@ -33,23 +33,19 @@ else:
     use_dist = False
 
 suffix = 'Dense' if use_dist else ''
-
-if exp_config['env'] == 'PushSide':
-     env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PushMiddle':
-     env_name_list = ['FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PushDouble':
-     env_name_list = ['FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPShelf':
-     env_name_list = ['FetchPickAndPlaceShelfMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPObstacle':
-     env_name_list = ['FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix)]
+if exp_config['env'] == 'PnPHard':
+     env_name_list = ['FetchPickAndPlaceHardMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnPHarder':
+     env_name_list = ['FetchPickAndPlaceHarderMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnPHardest':
+     env_name_list = ['FetchPickAndPlaceHardestMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnP':
+     env_name_list = ['FetchPickAndPlaceHardestMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'All':
-     env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix), 
-                      'FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix), 
-                      'FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix), 
-                      'FetchPickAndPlaceShelfMulti{}-v1'.format(suffix), 
-                      'FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix)]
+     env_name_list = ['FetchPickAndPlaceHardMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceHarderMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceHardestMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceMulti{}-v1'.format(suffix)]
 
 for env_name in env_name_list:
 
@@ -65,12 +61,8 @@ for env_name in env_name_list:
     else:
         use_rnd = False
 
-    if env_name == 'FetchPushObstacleDoubleGapMulti-v1':
-        n_episodes = 200
-        gamma = 0.9875
-    else: 
-        n_episodes = 100
-        gamma = 0.98
+    n_episodes = 100
+    gamma = 0.98
 
     for i_exp in range(int(exp_config['start_n_exp']), int(exp_config['n_exp'])):
         if exp_config['obj_rew'] == 'True':
@@ -105,17 +97,7 @@ for env_name in env_name_list:
             env, memory, noise, config, normalizer, agent_id = experiment_args
 
             #loading the object model
-            if env_name == 'FetchPushObstacleSideGapMulti-v1':
-                path = './ObT_models/obj/push_side_7d_ep25/'
-            elif env_name == 'FetchPushObstacleMiddleGapMulti-v1':
-                path = './ObT_models/obj/push_middle_7d_ep25/'
-            elif env_name == 'FetchPushObstacleDoubleGapMulti-v1':
-                path = './ObT_models/obj/push_double_7d_ep50/'
-            elif env_name == 'FetchPickAndPlaceShelfMulti-v1':
-                path = './ObT_models/obj/pnp_shelf_7d_ep25/'
-            elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
-                path = './ObT_models/obj/pnp_obstacle_7d_ep25/'
-
+            path = './ObT_models/obj/pnp_hardest_7d_ep25/'
             print('loading object model')
             print(path)
             model.critics[0].load_state_dict(K.load(path + 'object_Qfunc.pt'))
