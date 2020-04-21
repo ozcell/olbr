@@ -5,7 +5,7 @@ import time
 import torch as K
 
 from olbr.utils import get_params as get_params, running_mean, get_exp_params
-from olbr.main import init, run
+from olbr.main_hard import init, run
 from olbr.main_q_v2 import init as init_q
 from olbr.main_q_v2 import run as run_q
 from olbr.main_q_rnd import init as init_q_rnd
@@ -40,7 +40,7 @@ elif exp_config['env'] == 'PnPHarder':
 elif exp_config['env'] == 'PnPHardest':
      env_name_list = ['FetchPickAndPlaceHardestMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'PnP':
-     env_name_list = ['FetchPickAndPlaceHardestMulti{}-v1'.format(suffix)]
+     env_name_list = ['FetchPickAndPlaceMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'All':
      env_name_list = ['FetchPickAndPlaceHardMulti{}-v1'.format(suffix), 
                       'FetchPickAndPlaceHarderMulti{}-v1'.format(suffix), 
