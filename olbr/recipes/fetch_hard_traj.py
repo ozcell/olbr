@@ -6,10 +6,10 @@ import torch as K
 
 from olbr.utils import get_params as get_params, running_mean, get_exp_params
 from olbr.main import init, run
-from olbr.main_multi_schedule_progressive import init as init_o
-from olbr.main_multi_schedule_progressive import run as run_o
-from olbr.main_q_v3 import init as init_q_o
-from olbr.main_q_v3 import run as run_q_o
+from olbr.main_multi_schedule_progressive_hard import init as init_o
+from olbr.main_multi_schedule_progressive_hard import run as run_o
+from olbr.main_q_v3_hard import init as init_q_o
+from olbr.main_q_v3_hard import run as run_q_o
 from olbr.agents.basic import TrajectoryDyn
 import matplotlib.pyplot as plt
 
@@ -35,22 +35,19 @@ else:
 
 suffix = 'Dense' if use_dist else ''
 
-if exp_config['env'] == 'PushSide':
-     env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PushMiddle':
-     env_name_list = ['FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PushDouble':
-     env_name_list = ['FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPShelf':
-     env_name_list = ['FetchPickAndPlaceShelfMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPObstacle':
-     env_name_list = ['FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix)]
+if exp_config['env'] == 'PnPHard':
+     env_name_list = ['FetchPickAndPlaceHardMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnPHarder':
+     env_name_list = ['FetchPickAndPlaceHarderMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnPHardest':
+     env_name_list = ['FetchPickAndPlaceHardestMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnP':
+     env_name_list = ['FetchPickAndPlaceMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'All':
-     env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix), 
-                      'FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix), 
-                      'FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix), 
-                      'FetchPickAndPlaceShelfMulti{}-v1'.format(suffix), 
-                      'FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix)]
+     env_name_list = ['FetchPickAndPlaceHardMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceHarderMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceHardestMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceMulti{}-v1'.format(suffix)]
 
 for env_name in env_name_list:
 
@@ -61,25 +58,12 @@ for env_name in env_name_list:
         use_her = False
         print("training without HER")
 
-    if env_name == 'FetchPushObstacleDoubleGapMulti-v1':
-        n_episodes = 200
-        gamma = 0.9875
-    else: 
-        n_episodes = 100
-        gamma = 0.98
+    n_episodes = 100
+    gamma = 0.98
 
     for i_exp in range(int(exp_config['start_n_exp']), int(exp_config['n_exp'])):
         
-        if env_name == 'FetchPushObstacleSideGapMulti-v1':
-            path = './ObT_models/obj/push_side_7d_ep25/'
-        elif env_name == 'FetchPushObstacleMiddleGapMulti-v1':
-            path = './ObT_models/obj/push_middle_7d_ep25/'
-        elif env_name == 'FetchPushObstacleDoubleGapMulti-v1':
-            path = './ObT_models/obj/push_double_7d_ep50/'
-        elif env_name == 'FetchPickAndPlaceShelfMulti-v1':
-            path = './ObT_models/obj/pnp_shelf_7d_ep25/'
-        elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
-            path = './ObT_models/obj/pnp_obstacle_7d_ep25/'
+        path = './ObT_models/obj/pnp_hardest_7d_ep25/'
         print('loading object trajectory model')
         print(path)
 
