@@ -119,7 +119,7 @@ for env_name in env_name_list:
             elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
                 path = './ObT_models/obj/pnp_obstacle_7d_ep25/'        
             elif env_name == 'FetchPickAndPlaceHardestMulti-v1':
-            path = './ObT_models/obj/pnp_hardest_7d_ep25/'
+                path = './ObT_models/obj/pnp_hardest_7d_ep25/'
 
             print('loading object model')
             print(path)
