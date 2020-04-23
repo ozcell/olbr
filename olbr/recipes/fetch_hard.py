@@ -35,15 +35,15 @@ else:
 suffix = 'Dense' if use_dist else ''
 if exp_config['env'] == 'PnPHard':
      env_name_list = ['FetchPickAndPlaceHardMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPHarder':
-     env_name_list = ['FetchPickAndPlaceHarderMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnPHard2':
+     env_name_list = ['FetchPickAndPlaceHard2Multi{}-v1'.format(suffix)]
 elif exp_config['env'] == 'PnPHardest':
      env_name_list = ['FetchPickAndPlaceHardestMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'PnP':
      env_name_list = ['FetchPickAndPlaceMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'All':
-     env_name_list = ['FetchPickAndPlaceHardMulti{}-v1'.format(suffix), 
-                      'FetchPickAndPlaceHarderMulti{}-v1'.format(suffix), 
+     env_name_list = ['FetchPickAndPlaceHardMulti{}-v1'.format(suffix),
+                      'FetchPickAndPlaceHard2Multi{}-v1'.format(suffix),  
                       'FetchPickAndPlaceHardestMulti{}-v1'.format(suffix), 
                       'FetchPickAndPlaceMulti{}-v1'.format(suffix)]
 
