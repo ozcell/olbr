@@ -54,7 +54,7 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
             return env
         return _f   
 
-    if 'Fetch' in ENV_NAME and 'Multi' in ENV_NAME and 'Hard' in ENV_NAME:
+    if 'Fetch' in ENV_NAME and 'Multi' in ENV_NAME:
         dummy_env = gym.make(ENV_NAME, n_objects=config['max_nb_objects'], 
                                     obj_action_type=config['obj_action_type'], 
                                     observe_obj_grp=config['observe_obj_grp'],
@@ -70,26 +70,6 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
         envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', agent == 'object') for i_env in range(1)])
         n_rob_actions = 4
         n_actions = config['max_nb_objects'] * len(config['obj_action_type']) + n_rob_actions
-    elif 'Fetch' in ENV_NAME and 'Multi' in ENV_NAME and 'Flex' not in ENV_NAME:
-        dummy_env = gym.make(ENV_NAME, n_objects=config['max_nb_objects'], 
-                                    obj_action_type=config['obj_action_type'], 
-                                    observe_obj_grp=config['observe_obj_grp'],
-                                    obj_range=config['obj_range'])
-        envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)])
-        envs_test = None
-        envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', agent == 'object') for i_env in range(1)])
-        n_rob_actions = 4
-        n_actions = config['max_nb_objects'] * len(config['obj_action_type']) + n_rob_actions
-    elif 'Fetch' in ENV_NAME and 'Multi' in ENV_NAME and 'Flex' in ENV_NAME:
-        dummy_env = gym.make(ENV_NAME, n_objects=config['max_nb_objects'], 
-                                    obj_action_type=config['obj_action_type'], 
-                                    observe_obj_grp=config['observe_obj_grp'],
-                                    obj_range=config['obj_range'])
-        envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)])
-        envs_test = None
-        envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', agent == 'object') for i_env in range(1)])
-        n_rob_actions = 4
-        n_actions = 2 * len(config['obj_action_type']) + n_rob_actions
     elif 'HandManipulate' in ENV_NAME and 'Multi' in ENV_NAME:
         dummy_env = gym.make(ENV_NAME, obj_action_type=config['obj_action_type'])
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Hand', agent == 'object') for i_env in range(N_ENVS)])
