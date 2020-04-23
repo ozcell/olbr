@@ -60,10 +60,13 @@ def init(config, agent='robot', her=False, object_Qfunc=None, backward_dyn=None,
                                     observe_obj_grp=config['observe_obj_grp'],
                                     obj_range=config['obj_range'])
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)])
+        envs_test = []
         if 'Dense' in ENV_NAME:
-            envs_test = SubprocVecEnv([make_env('FetchPickAndPlaceMultiDense-v1', i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)])
+            envs_test.append(SubprocVecEnv([make_env('FetchPickAndPlaceMultiDense-v1', i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)]))
+            envs_test.append(SubprocVecEnv([make_env('FetchPickAndPlaceHardestMultiDense-v1', i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)]))
         else:
-            envs_test = SubprocVecEnv([make_env('FetchPickAndPlaceMulti-v1', i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)])
+            envs_test.append(SubprocVecEnv([make_env('FetchPickAndPlaceMulti-v1', i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)]))
+            envs_test.append(SubprocVecEnv([make_env('FetchPickAndPlaceHardestMulti-v1', i_env, 'Fetch', agent == 'object') for i_env in range(N_ENVS)]))
         envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch', agent == 'object') for i_env in range(1)])
         n_rob_actions = 4
         n_actions = config['max_nb_objects'] * len(config['obj_action_type']) + n_rob_actions
@@ -349,15 +352,13 @@ def run(model, experiment_args, train=True):
     episode_reward_all = []
     episode_success_all = []
     episode_distance_all = []
-    episode_reward_all_2 = []
     episode_success_all_2 = []
-    episode_distance_all_2 = []
+    episode_success_all_3 = []
     episode_reward_mean = []
     episode_success_mean = []
     episode_distance_mean = []
-    episode_reward_mean_2 = []
     episode_success_mean_2 = []
-    episode_distance_mean_2 = []
+    episode_success_mean_3 = []
     critic_losses = []
     actor_losses = []
     backward_losses = []
@@ -399,9 +400,8 @@ def run(model, experiment_args, train=True):
         episode_reward_cycle = []
         episode_succeess_cycle = []
         episode_distance_cycle = []
-        episode_reward_cycle_2 = []
         episode_succeess_cycle_2 = []
-        episode_distance_cycle_2 = []
+        episode_succeess_cycle_3 = []
         rollout_per_env = N_TEST_ROLLOUTS // config['n_envs']
         for i_rollout in range(rollout_per_env):
             render = config['render'] == 2 and i_episode % config['render'] == 0
@@ -413,11 +413,15 @@ def run(model, experiment_args, train=True):
 
         for i_rollout in range(rollout_per_env):
             render = config['render'] == 2 and i_episode % config['render'] == 0
-            _, episode_reward, success, distance = rollout(envs_test, model, False, config, normalizer=normalizer, render=render, agent_id=agent_id, ai_object=False, rob_policy=config['rob_policy'])
+            _, episode_reward, success, distance = rollout(envs_test[0], model, False, config, normalizer=normalizer, render=render, agent_id=agent_id, ai_object=False, rob_policy=config['rob_policy'])
                 
-            episode_reward_cycle_2.extend(episode_reward)
             episode_succeess_cycle_2.extend(success)
-            episode_distance_cycle_2.extend(distance)
+
+        for i_rollout in range(rollout_per_env):
+            render = config['render'] == 2 and i_episode % config['render'] == 0
+            _, episode_reward, success, distance = rollout(envs_test[1], model, False, config, normalizer=normalizer, render=render, agent_id=agent_id, ai_object=False, rob_policy=config['rob_policy'])
+                
+            episode_succeess_cycle_3.extend(success)
 
         render = (config['render'] == 1) and (i_episode % config['render'] == 0) and (envs_render is not None)
         if render:
@@ -430,17 +434,15 @@ def run(model, experiment_args, train=True):
         episode_success_all.append(episode_succeess_cycle)
         episode_distance_all.append(episode_distance_cycle)
 
-        episode_reward_all_2.append(episode_reward_cycle_2)
         episode_success_all_2.append(episode_succeess_cycle_2)
-        episode_distance_all_2.append(episode_distance_cycle_2)
+        episode_success_all_3.append(episode_succeess_cycle_3)
 
         episode_reward_mean.append(np.mean(episode_reward_cycle))
         episode_success_mean.append(np.mean(episode_succeess_cycle))
         episode_distance_mean.append(np.mean(episode_distance_cycle))
 
-        episode_reward_mean_2.append(np.mean(episode_reward_cycle_2))
         episode_success_mean_2.append(np.mean(episode_succeess_cycle_2))
-        episode_distance_mean_2.append(np.mean(episode_distance_cycle_2))
+        episode_success_mean_3.append(np.mean(episode_succeess_cycle_3))
 
         plot_durations(np.asarray(episode_reward_mean), np.asarray(episode_success_mean))
         
@@ -461,8 +463,8 @@ def run(model, experiment_args, train=True):
                 print('  | Running mean of total reward: {}'.format(episode_reward_mean[-1]))
                 print('  | Success rate: {}'.format(episode_success_mean[-1]))
                 print('  | Distance to target {}'.format(episode_distance_mean[-1]))
-                print('  | Success rate on normal: {}'.format(episode_success_mean_2[-1]))
-                print('  | Distance to target on normal {}'.format(episode_distance_mean_2[-1]))
+                print('  | Success rate on NormalPnP: {}'.format(episode_success_mean_2[-1]))
+                print('  | Success rate on HardestPnP: {}'.format(episode_success_mean_3[-1]))
                 print('  | Time episode: {}'.format(time.time()-episode_time_start))
                 print('  | Time total: {}'.format(time.time()-total_time_start))
 
@@ -485,7 +487,7 @@ def run(model, experiment_args, train=True):
     else:
         print('Test completed')
 
-    return (episode_reward_all, episode_success_all, episode_distance_all, episode_success_all_2, episode_distance_all_2), (bestmodel_critic, bestmodel_actor, bestmodel_normalizer)
+    return (episode_reward_all, episode_success_all, episode_distance_all, episode_success_all_2, episode_success_all_3), (bestmodel_critic, bestmodel_actor, bestmodel_normalizer)
 
 # set up matplotlib
 is_ipython = 'inline' in matplotlib.get_backend()
