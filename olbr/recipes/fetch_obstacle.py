@@ -68,7 +68,7 @@ for env_name in env_name_list:
     else:
         use_rnd = False
 
-    if env_name == 'FetchPushObstacleDoubleGapMulti-v1':
+    if 'FetchPushObstacleDoubleGapMulti' in env_name:
         n_episodes = 200
         gamma = 0.9875
     else: 
@@ -194,7 +194,7 @@ for env_name in env_name_list:
 
         monitor2, bestmodel = run_2(model2, experiment_args2, train=True)
 
-        rob_name = env_name
+        rob_name = env_name.replace('Dense','')
         if obj_rew:
             if use_her:
                 rob_name = rob_name + '_SLDR_HER_'
