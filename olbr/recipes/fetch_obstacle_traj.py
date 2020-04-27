@@ -64,7 +64,7 @@ for env_name in env_name_list:
         use_her = False
         print("training without HER")
 
-    if env_name == 'FetchPushObstacleDoubleGapMulti-v1':
+    if 'FetchPushObstacleDoubleGapMulti' in env_name:
         n_episodes = 200
         gamma = 0.9875
     else: 
@@ -196,7 +196,7 @@ for env_name in env_name_list:
             env2, memory2, noise2, config2, normalizer2, running_rintr_mean2 = experiment_args2
         monitor2, bestmodel = run_2(model2, experiment_args2, train=True)
 
-        rob_name = env_name
+        rob_name = env_name.replace('Dense','')
         if obj_rew:
             if use_her:
                 rob_name = rob_name + '_OTR_SLDR_HER_'
