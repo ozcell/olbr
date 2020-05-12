@@ -46,13 +46,16 @@ elif exp_config['env'] == 'PnPObstacle':
      env_name_list = ['FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'PnPHardest':
      env_name_list = ['FetchPickAndPlaceHardestMulti{}-v1'.format(suffix)]
+elif exp_config['env'] == 'PnPInsertion':
+     env_name_list = ['FetchPickAndPlaceInsertionMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'All':
      env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix), 
                       'FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix), 
                       'FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix), 
                       'FetchPickAndPlaceShelfMulti{}-v1'.format(suffix), 
                       'FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix),
-                      'FetchPickAndPlaceHardestMulti{}-v1'.format(suffix)]
+                      'FetchPickAndPlaceHardestMulti{}-v1'.format(suffix),
+                      'FetchPickAndPlaceInsertionMulti{}-v1'.format(suffix)]
 
 for env_name in env_name_list:
 
@@ -120,6 +123,8 @@ for env_name in env_name_list:
                 path = './ObT_models/obj/pnp_obstacle_7d_ep25/'        
             elif env_name == 'FetchPickAndPlaceHardestMulti-v1':
                 path = './ObT_models/obj/pnp_hardest_7d_ep25/'
+            elif env_name == 'FetchPickAndPlaceInsertionMulti-v1':
+                path = './ObT_models/obj/pnp_insertion_7d_ep25/'
 
             print('loading object model')
             print(path)
