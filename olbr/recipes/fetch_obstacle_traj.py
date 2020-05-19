@@ -52,12 +52,12 @@ elif exp_config['env'] == 'PnPInsertion':
 elif exp_config['env'] == 'PnPNormal':
      env_name_list = ['FetchPickAndPlaceMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'All':
-     env_name_list = [#'FetchPushObstacleSideGapMulti{}-v1'.format(suffix), 
-                      #'FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix), 
-                      #'FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix), 
-                      #'FetchPickAndPlaceShelfMulti{}-v1'.format(suffix), 
-                      #'FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix),
-                      #'FetchPickAndPlaceHardestMulti{}-v1'.format(suffix),
+     env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix), 
+                      'FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix), 
+                      'FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceShelfMulti{}-v1'.format(suffix), 
+                      'FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix),
+                      'FetchPickAndPlaceHardestMulti{}-v1'.format(suffix),
                       'FetchPickAndPlaceInsertionMulti{}-v1'.format(suffix),
                       'FetchPickAndPlaceMulti{}-v1'.format(suffix)
                       ]
