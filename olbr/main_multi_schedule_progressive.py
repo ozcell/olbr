@@ -219,7 +219,7 @@ def init(config, agent='robot', her=False,
 
     experiment_args = ((envs, envs_test, envs_render), memory, noise, config, normalizer, None)
 
-    print("0.20 - 0.25 - boundary_sample iff original_goal update norm")
+    print('Success threshold: %.2f, Probablity of original goals: %.2f',  % (config['objtraj_success'], config['objtraj_p']))
           
     return model, experiment_args
 
@@ -256,7 +256,7 @@ def rollout(env, model, noise, config, normalizer=None, render=False, step=(1,5)
         obs = [K.tensor(obs, dtype=K.float32) for obs in state_all['observation']]
         goal = K.tensor(state_all['desired_goal'], dtype=K.float32)
         if i_step == 0:
-            if (np.random.rand() < 0.20 and not boundary_sample) or (step_h >= config['episode_length']):
+            if (np.random.rand() < config['objtraj_p'] and not boundary_sample) or (step_h >= config['episode_length']):
                 objtraj_goal = goal
                 original_goal = True
             else:
@@ -419,7 +419,7 @@ def run(model, experiment_args, train=True):
                 _, _, _, success = rollout(envs_train, model, False, config, normalizer=normalizer, render=False, 
                                                             step=(obj_traj_step, obj_traj_step),boundary_sample=True)
 
-                if success.mean() >= 0.25 and obj_traj_step < config['episode_length']:
+                if success.mean() >= config['objtraj_success'] and obj_traj_step < config['episode_length']:
                     obj_traj_step += 1
                     print(obj_traj_step)
 
