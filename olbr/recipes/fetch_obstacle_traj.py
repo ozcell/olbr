@@ -183,6 +183,8 @@ for env_name in env_name_list:
                 '--obj_action_type', '0123456',
                 '--max_nb_objects', '1',
                 '--observe_obj_grp', 'False',
+                '--objtraj_success', exp_config['objtraj_success'],
+                '--objtraj_p', exp_config['objtraj_p']
                 ]
 
         config2 = get_params(args=exp_args2)
@@ -222,7 +224,7 @@ for env_name in env_name_list:
         if use_dist:
             rob_name = rob_name + 'DIST_'
 
-        path = './ObT_models/batch1/' + rob_name + str(i_exp)
+        path = './ObT_models/batch1/' + rob_name + exp_config['objtraj_success'] + '_' + exp_config['objtraj_p'] + '_' + str(i_exp)
         try:  
             os.makedirs(path)
         except OSError:  
