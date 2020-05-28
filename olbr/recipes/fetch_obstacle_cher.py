@@ -27,6 +27,8 @@ exp_config = get_exp_params(sys.argv[1:])
 filepath = exp_config['filepath'] 
 os.chdir(filepath)
 
+suffix = ''
+
 if exp_config['env'] == 'PushSide':
      env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'PushMiddle':
