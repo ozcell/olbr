@@ -308,6 +308,13 @@ def get_params(args=[], verbose=False):
 
     parser.add_argument('--objtraj_goal_horizon', default=5, type=int,\
                          help='The time-steps between object trajectory goals')
+
+    parser.add_argument('--objtraj_success', default=0.25, type=float,
+                        help='Success threshold for increasing k (default: 0.25)')
+
+    parser.add_argument('--objtraj_p', default=0.20, type=float,
+                        help='The probability of g in introduced goals (default: 0.20)')
+
     # acquire in a dict
     config = parser.parse_args(args)
     args   = vars(config)
@@ -659,6 +666,9 @@ def get_exp_params(args=[], verbose=False):
     parser.add_argument("--shaped", default="False")
     parser.add_argument("--use_rnd", default="False")
     parser.add_argument("--filepath", default="/home/ok18/Jupyter/notebooks/Reinforcement_Learning/")
+    parser.add_argument("--use_cher", default="False")
+    parser.add_argument("--objtraj_success", default="0.25")
+    parser.add_argument("--objtraj_p", default="0.20")
 
     # acquire in a dict
     config = parser.parse_args(args)
