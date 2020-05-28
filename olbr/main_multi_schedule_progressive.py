@@ -219,7 +219,7 @@ def init(config, agent='robot', her=False,
 
     experiment_args = ((envs, envs_test, envs_render), memory, noise, config, normalizer, None)
 
-    print('Success threshold: %.2f, Probablity of original goals: %.2f',  % (config['objtraj_success'], config['objtraj_p']))
+    print('Success threshold: %.2f, Probablity of original goals: %.2f'  % (config['objtraj_success'], config['objtraj_p']))
           
     return model, experiment_args
 
