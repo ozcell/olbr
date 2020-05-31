@@ -39,27 +39,9 @@ if exp_config['env'] == 'PushSide':
      env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'PushMiddle':
      env_name_list = ['FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PushDouble':
-     env_name_list = ['FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPShelf':
-     env_name_list = ['FetchPickAndPlaceShelfMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPObstacle':
-     env_name_list = ['FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPHardest':
-     env_name_list = ['FetchPickAndPlaceHardestMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPInsertion':
-     env_name_list = ['FetchPickAndPlaceInsertionMulti{}-v1'.format(suffix)]
-elif exp_config['env'] == 'PnPNormal':
-     env_name_list = ['FetchPickAndPlaceMulti{}-v1'.format(suffix)]
 elif exp_config['env'] == 'All':
      env_name_list = ['FetchPushObstacleSideGapMulti{}-v1'.format(suffix), 
                       'FetchPushObstacleMiddleGapMulti{}-v1'.format(suffix), 
-                      'FetchPushObstacleDoubleGapMulti{}-v1'.format(suffix), 
-                      'FetchPickAndPlaceShelfMulti{}-v1'.format(suffix), 
-                      'FetchPickAndPlaceObstacleMulti{}-v1'.format(suffix),
-                      'FetchPickAndPlaceHardestMulti{}-v1'.format(suffix),
-                      'FetchPickAndPlaceInsertionMulti{}-v1'.format(suffix),
-                      'FetchPickAndPlaceMulti{}-v1'.format(suffix)
                       ]
 
 for env_name in env_name_list:
@@ -71,31 +53,15 @@ for env_name in env_name_list:
         use_her = False
         print("training without HER")
 
-    if 'FetchPushObstacleDoubleGapMulti' in env_name:
-        n_episodes = 200
-        gamma = 0.9875
-    else: 
-        n_episodes = 100
-        gamma = 0.98
+    n_episodes = 100
+    gamma = 0.98
 
     for i_exp in range(int(exp_config['start_n_exp']), int(exp_config['n_exp'])):
         
         if env_name == 'FetchPushObstacleSideGapMulti-v1':
-            path = './ObT_models/obj/push_side_7d_ep25/'
+            path = './ObT_models/obj/push_side_7d_ep25_nonoptimal/'
         elif env_name == 'FetchPushObstacleMiddleGapMulti-v1':
-            path = './ObT_models/obj/push_middle_7d_ep25/'
-        elif env_name == 'FetchPushObstacleDoubleGapMulti-v1':
-            path = './ObT_models/obj/push_double_7d_ep50/'
-        elif env_name == 'FetchPickAndPlaceShelfMulti-v1':
-            path = './ObT_models/obj/pnp_shelf_7d_ep25/'
-        elif env_name == 'FetchPickAndPlaceObstacleMulti-v1':
-            path = './ObT_models/obj/pnp_obstacle_7d_ep25/'
-        elif env_name == 'FetchPickAndPlaceHardestMulti-v1':
-            path = './ObT_models/obj/pnp_hardest_7d_ep25/'
-        elif env_name == 'FetchPickAndPlaceInsertionMulti-v1':
-            path = './ObT_models/obj/pnp_insertion_7d_ep25/'
-        elif env_name == 'FetchPickAndPlaceMulti-v1':
-            path = './ObT_models/obj/pnp_hardest_7d_ep25/'
+            path = './ObT_models/obj/push_middle_7d_ep25_nonoptimal/'
         print('loading object trajectory model')
         print(path)
 
@@ -224,7 +190,7 @@ for env_name in env_name_list:
         if use_dist:
             rob_name = rob_name + 'DIST_'
 
-        path = './ObT_models/batch1/' + rob_name + exp_config['objtraj_success'] + '_' + exp_config['objtraj_p'] + '_' + str(i_exp)
+        path = './ObT_models/batch1/' + rob_name + exp_config['objtraj_success'] + '_' + exp_config['objtraj_p'] + '_nonopt_' + str(i_exp)
         try:  
             os.makedirs(path)
         except OSError:  
@@ -249,6 +215,6 @@ for env_name in env_name_list:
         with open(path + '/normalizer_best.pkl', 'wb') as file:
             pickle.dump(bestmodel[2][0:2], file)
 
-        path = './ObT_models/batch1/monitor_' + rob_name + str(i_exp) + '.npy'
+        path = './ObT_models/batch1/monitor_' + rob_name + exp_config['objtraj_success'] + '_' + exp_config['objtraj_p'] + '_nonopt_' + str(i_exp) + '.npy'
         np.save(path, monitor2)
 
