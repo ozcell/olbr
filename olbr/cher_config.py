@@ -1,8 +1,8 @@
 learning_step = 0
 total_learning_step = 200
 
-learning_candidates = 4864#128
-learning_selected = 2432#64 # batch_size
+learning_candidates = 128
+learning_selected = 64 # batch_size
 learning_up = 2
 learning_down = 1
 learning_rate = 0.0001
