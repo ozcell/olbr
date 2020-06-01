@@ -66,7 +66,7 @@ def make_sample_her_transitions(replay_strategy, replay_k, reward_fun):
         num_neighbor = 1
         kgraph = NearestNeighbors(
             n_neighbors=num_neighbor, algorithm='kd_tree',
-            metric='euclidean').fit(goals).kneighbors_graph(
+            metric='euclidean',n_jobs=-1).fit(goals).kneighbors_graph(
                 mode='distance').tocoo(copy=False)
         row = kgraph.row
         col = kgraph.col
