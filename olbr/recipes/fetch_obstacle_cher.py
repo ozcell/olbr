@@ -96,7 +96,7 @@ for env_name in env_name_list:
                 '--n_test_rollouts', '380',
                 '--n_envs', '38',
                 '--n_batches', '40',
-                '--batch_size', '4864',
+                '--batch_size', '2432',
                 '--obj_action_type', '0123456',
                 '--max_nb_objects', '1',
                 '--observe_obj_grp', 'False',
@@ -115,7 +115,7 @@ for env_name in env_name_list:
 
         rob_name = env_name
         if use_cher:
-            rob_name = rob_name + '_CHER_'
+            rob_name = rob_name + '_CHER_v2_'
         else:
             rob_name = rob_name + '_'
 
