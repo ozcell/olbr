@@ -17,6 +17,8 @@ from olbr.exploration import Noise
 from olbr.utils import Saver, Summarizer, get_params, running_mean
 from olbr.agents.basic import Actor 
 from olbr.agents.basic import Critic
+from olbr.replay_buffer import ReplayBuffer
+from olbr.her_sampler import make_sample_her_transitions
 
 import pdb
 
@@ -96,6 +98,16 @@ def init(config, agent='robot', her=False,
         envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Hand') for i_env in range(1)])
         n_rob_actions = 20
         n_actions = 1 * len(config['obj_action_type']) + n_rob_actions
+    elif 'Fetch' in ENV_NAME and 'MaRob' in ENV_NAME:
+        dummy_env = gym.make(ENV_NAME, n_objects=config['max_nb_objects'], 
+                                    obj_action_type=config['obj_action_type'], 
+                                    observe_obj_grp=config['observe_obj_grp'],
+                                    obj_range=config['obj_range'])
+        envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch') for i_env in range(N_ENVS)])
+        envs_test = None
+        envs_render = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Fetch') for i_env in range(1)])
+        n_rob_actions = 4 * 2
+        n_actions = config['max_nb_objects'] * len(config['obj_action_type']) + n_rob_actions
     else:
         dummy_env = gym.make(ENV_NAME)
         envs = SubprocVecEnv([make_env(ENV_NAME, i_env, 'Others') for i_env in range(N_ENVS)])
@@ -120,8 +132,8 @@ def init(config, agent='robot', her=False,
                     d = np.linalg.norm(goal_a - goal_b, axis=-1)
                     #obj_rew = - (d > dummy_env.env.distance_threshold).astype(np.float32).sum(-1)
                     obj_rew = - (d > dummy_env.env.distance_threshold).astype(np.float32)
-                #all_rew = np.concatenate((all_rew, obj_rew.copy()[:, np.newaxis]), axis=-1)
-                all_rew = np.concatenate((all_rew, obj_rew.copy()), axis=-1)
+                all_rew = np.concatenate((all_rew, obj_rew.copy()[:, np.newaxis]), axis=-1)
+                #all_rew = np.concatenate((all_rew, obj_rew.copy()), axis=-1)
             return all_rew
         
         return _her_reward_fun
@@ -131,7 +143,8 @@ def init(config, agent='robot', her=False,
     K.manual_seed(SEED)
     np.random.seed(SEED)
 
-    observation_space = dummy_env.observation_space.spaces['observation'].shape[1] + dummy_env.observation_space.spaces['desired_goal'].shape[0]*2
+    observation_space = (dummy_env.observation_space.spaces['observation'].shape[1]*2 + dummy_env.observation_space.spaces['desired_goal'].shape[0]*2, 
+                        dummy_env.observation_space.spaces['observation'].shape[1]*1 + dummy_env.observation_space.spaces['desired_goal'].shape[0]*2)
     action_space = (gym.spaces.Box(-1., 1., shape=(n_rob_actions,), dtype='float32'),
                     gym.spaces.Box(-1., 1., shape=(n_actions-n_rob_actions,), dtype='float32'),
                     gym.spaces.Box(-1., 1., shape=(n_actions,), dtype='float32'))
@@ -148,14 +161,7 @@ def init(config, agent='robot', her=False,
     NORMALIZED_REWARDS = config['reward_normalization']
 
     OUT_FUNC = K.tanh 
-    if config['agent_alg'] == 'DDPG_BD':
-        MODEL = DDPG_BD
-        from olbr.replay_buffer import ReplayBuffer
-        from olbr.her_sampler import make_sample_her_transitions
-    elif config['agent_alg'] == 'MADDPG_BD':
-        MODEL = MADDPG_BD
-        from olbr.replay_buffer import ReplayBuffer_v2 as ReplayBuffer
-        from olbr.her_sampler import make_sample_her_transitions_v2 as make_sample_her_transitions
+    MODEL = DDPG_BD
 
     #exploration initialization
     noise = Noise(action_space[0].shape[0], sigma=0.2, eps=0.3) 
@@ -168,7 +174,7 @@ def init(config, agent='robot', her=False,
     model = MODEL(observation_space, action_space, optimizer, 
                   Actor, Critic, loss_func, GAMMA, TAU, out_func=OUT_FUNC, discrete=False, 
                   regularization=REGULARIZATION, normalized_rewards=NORMALIZED_REWARDS,
-                  reward_fun=reward_fun, clip_Q_neg=clip_Q_neg, nb_critics=3#config['max_nb_objects']+1
+                  reward_fun=reward_fun, clip_Q_neg=clip_Q_neg, nb_critics=config['max_nb_objects']+1
                   )
 
     model.n_objects = config['max_nb_objects']
@@ -219,11 +225,14 @@ def init(config, agent='robot', her=False,
 
             # Observation normalization
             obs_goal = []
-            obs_goal.append(K.cat([obs[0], goal, objtraj_goal], dim=-1))
+            obs_goal.append(K.cat([obs[0], obs[1], goal, objtraj_goal], dim=-1))
             if normalizer[0] is not None:
                 obs_goal[0] = normalizer[0].preprocess_with_update(obs_goal[0])
 
-            action = model.select_action(obs_goal[0], noise).cpu().numpy().squeeze(0)
+            if config['agent_alg'] == 'DDPG_BD':
+                action = model.select_action(obs_goal[0], noise).cpu().numpy().squeeze(0)
+            elif config['agent_alg'] == 'MADDPG_BD':
+                action = model.select_action(obs_goal[0], noise, goal_size=goal.shape[1]).cpu().numpy().squeeze(0)
             action_to_env = np.zeros_like(dummy_env.action_space.sample())
             action_to_env[0:action.shape[0]] = action
 
@@ -239,7 +248,7 @@ def init(config, agent='robot', her=False,
         sample_her_transitions = make_sample_her_transitions('none', 4, her_reward_fun)
 
     buffer_shapes = {
-        'o' : (config['episode_length'], dummy_env.observation_space.spaces['observation'].shape[1]*2),
+        'o' : (config['episode_length'], dummy_env.observation_space.spaces['observation'].shape[1]*3),
         'ag' : (config['episode_length'], dummy_env.observation_space.spaces['achieved_goal'].shape[0]*2),
         'g' : (config['episode_length'], dummy_env.observation_space.spaces['desired_goal'].shape[0]*2),
         'u' : (config['episode_length']-1, action_space[2].shape[0])
@@ -265,7 +274,7 @@ def back_to_dict(state, config):
 
 def rollout(env, model, noise, config, normalizer=None, render=False):
     trajectories = []
-    for i_agent in range(2):
+    for i_agent in range(3):
         trajectories.append([])
     
     # monitoring variables
@@ -301,11 +310,20 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
         # Observation normalization
         obs_goal = []
         for i_agent in range(2):
-            obs_goal.append(K.cat([obs[i_agent], goal, objtraj_goal], dim=-1))
+            if i_agent == 0:
+                obs_goal.append(K.cat([obs[0], obs[1], goal, objtraj_goal], dim=-1))
+            elif i_agent == 1:
+                obs_goal.append(K.cat([obs[2], goal, objtraj_goal], dim=-1))
             if normalizer[i_agent] is not None:
-                obs_goal[i_agent] = normalizer[i_agent].preprocess_with_update(obs_goal[i_agent])
+                if i_agent == 0:
+                    obs_goal[i_agent] = normalizer[i_agent].preprocess_with_update(obs_goal[i_agent])
+                else:
+                    obs_goal[i_agent] = normalizer[i_agent].preprocess(obs_goal[i_agent])
 
-        action = model.select_action(obs_goal[0], noise).cpu().numpy()
+        if config['agent_alg'] == 'DDPG_BD':
+            action = model.select_action(obs_goal[0], noise).cpu().numpy()
+        elif config['agent_alg'] == 'MADDPG_BD':
+            action = model.select_action(obs_goal[0], noise, goal_size=goal.shape[1]).cpu().numpy()
 
         action_to_env = np.zeros((len(action), len(env.action_space.sample())))
         action_to_env[:,0:action.shape[1]] = action
@@ -316,7 +334,7 @@ def rollout(env, model, noise, config, normalizer=None, render=False):
         reward = K.tensor(reward, dtype=dtype).view(-1,1)
         episode_reward += reward.squeeze(1).cpu().numpy()
 
-        for i_agent in range(2):
+        for i_agent in range(3):
             state = {
                 'observation'   : state_all['observation'][i_agent].copy(),
                 'achieved_goal' : np.concatenate((state_all['achieved_goal'].copy(),
