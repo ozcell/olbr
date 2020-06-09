@@ -104,8 +104,24 @@ def init(config, agent='robot', her=False,
         envs_test = None
         envs_render = None
 
-    def her_reward_fun(ag_2, g, info):  # vectorized
+    def her_reward_fun_sparse(ag_2, g, info):  # vectorized
         return dummy_env.compute_reward(achieved_goal=ag_2, desired_goal=g, info=info).reshape(-1,1)
+
+    def her_reward_fun_step(ag_2, g, info):
+        goal_a = ag_2
+        goal_b = g
+        assert goal_a.shape == goal_b.shape
+        goal_a = goal_a.reshape(-1,dummy_env.env.n_objects,3)
+        goal_b = goal_b.reshape(-1,dummy_env.env.n_objects,3)
+        d = np.linalg.norm(goal_a - goal_b, axis=-1)
+        return -(d > dummy_env.env.distance_threshold).astype(np.float32).sum(-1).reshape(-1,1)
+
+    if config['use_step_reward_fun']:
+        her_reward_fun = her_reward_fun_step
+        print('using step reward')
+    else:
+        her_reward_fun = her_reward_fun_sparse
+        print('using sparse reward')
 
     K.manual_seed(SEED)
     np.random.seed(SEED)
@@ -139,6 +155,7 @@ def init(config, agent='robot', her=False,
     #exploration initialization
     noise = Noise(action_space[0].shape[0], sigma=0.2, eps=0.3) 
     config['episode_length'] = dummy_env._max_episode_steps
+    config['episode_length_object'] = 50
     config['observation_space'] = dummy_env.observation_space
 
     #model initialization
@@ -147,7 +164,7 @@ def init(config, agent='robot', her=False,
     model = MODEL(observation_space, action_space, optimizer, 
                   Actor, Critic, loss_func, GAMMA, TAU, out_func=OUT_FUNC, discrete=False, 
                   regularization=REGULARIZATION, normalized_rewards=NORMALIZED_REWARDS,
-                  reward_fun=reward_fun, clip_Q_neg=clip_Q_neg, nb_critics=config['max_nb_objects'] #or fixing to 3
+                  reward_fun=reward_fun, clip_Q_neg=clip_Q_neg, nb_critics=1#config['max_nb_objects'] #or fixing to 3
                   )
 
     model.n_objects = config['max_nb_objects']
@@ -219,7 +236,7 @@ def init(config, agent='robot', her=False,
 
     experiment_args = ((envs, envs_test, envs_render), memory, noise, config, normalizer, None)
 
-    print("0.20 - 0.25 - boundary_sample iff original_goal update norm")
+    print('Success threshold: %.2f, Probablity of original goals: %.2f'  % (config['objtraj_success'], config['objtraj_p']))
           
     return model, experiment_args
 
@@ -256,7 +273,7 @@ def rollout(env, model, noise, config, normalizer=None, render=False, step=(1,5)
         obs = [K.tensor(obs, dtype=K.float32) for obs in state_all['observation']]
         goal = K.tensor(state_all['desired_goal'], dtype=K.float32)
         if i_step == 0:
-            if (np.random.rand() < 0.20 and not boundary_sample) or (step_h >= config['episode_length']):
+            if (np.random.rand() < config['objtraj_p'] and not boundary_sample) or (step_h >= config['episode_length_object']).all():
                 objtraj_goal = goal
                 original_goal = True
             else:
@@ -271,8 +288,10 @@ def rollout(env, model, noise, config, normalizer=None, render=False, step=(1,5)
                     goal_per_obj = goal[:,i_object*goal_len_per_obj:(i_object+1)*goal_len_per_obj]
 
                     normed_achieved_goal_per_obj, normed_goal_per_goal, normed_step = normalizer[2].process(achieved_goal_per_obj, 
-                                                                                                            goal_per_obj, 
-                                                                                                            K.randint(low=step_l,high=step_h+1,size=(achieved_goal_per_obj.shape[0],1)))
+                                                                                        goal_per_obj, 
+                                                                                        K.randint(low=int(step_l[i_object]),
+                                                                                                  high=int(step_h[i_object])+1,
+                                                                                                  size=(achieved_goal_per_obj.shape[0],1)))
                     with K.no_grad():
                         objtraj_goal_per_obj = model.obj_traj(normed_achieved_goal_per_obj.to('cuda'), 
                                                               normed_goal_per_goal.to('cuda'), 
@@ -332,6 +351,8 @@ def rollout(env, model, noise, config, normalizer=None, render=False, step=(1,5)
         d_rot = angle_diff
         distance = (d_rot < 0.1).astype(np.float32)
     else:
+        goal_a = goal_a.reshape(-1,model.n_objects,3)
+        goal_b = goal_b.reshape(-1,model.n_objects,3)
         distance = np.linalg.norm(goal_a - goal_b, axis=-1)
         distance = (distance < 0.05).astype(np.float32)
     
@@ -386,7 +407,10 @@ def run(model, experiment_args, train=True):
 
     best_succeess = -1
 
-    obj_traj_step = 1
+    obj_traj_step = np.ones(model.n_objects, dtype=int)
+    step_l_1 = np.ones(model.n_objects, dtype=int)
+    step_h_50 = np.ones(model.n_objects, dtype=int)*config['episode_length_object']
+    
         
     for i_episode in range(N_EPISODES):
         
@@ -398,7 +422,7 @@ def run(model, experiment_args, train=True):
             for i_cycle in range(N_CYCLES):
                 
                 trajectories, episode_reward, success, distance = rollout(envs_train, model, noise, config, normalizer, render=False,
-                                                                   step=(1, obj_traj_step))
+                                                                   step=(step_l_1, obj_traj_step))
                 memory.store_episode(trajectories.copy())   
 
                 episode_reward_cycle_train.extend(episode_reward)
@@ -419,8 +443,10 @@ def run(model, experiment_args, train=True):
                 _, _, _, success = rollout(envs_train, model, False, config, normalizer=normalizer, render=False, 
                                                             step=(obj_traj_step, obj_traj_step),boundary_sample=True)
 
-                if success.mean() >= 0.25 and obj_traj_step < config['episode_length']:
-                    obj_traj_step += 1
+                success_idx = np.logical_and(success.mean(0) >= config['objtraj_success'], obj_traj_step < config['episode_length_object'])
+                obj_traj_step[success_idx] += 1
+                if success_idx.any():
+                    print("incrementing obj_traj_step")
                     print(obj_traj_step)
 
 
@@ -434,17 +460,17 @@ def run(model, experiment_args, train=True):
         for i_rollout in range(rollout_per_env):
             render = config['render'] == 2 and i_episode % config['render'] == 0
             _, episode_reward, success, distance = rollout(envs_test, model, False, config, normalizer=normalizer, render=render, 
-                                                           step=(1,config['episode_length']))
+                                                           step=(step_l_1, step_h_50))
                 
             episode_reward_cycle.extend(episode_reward)
             episode_succeess_cycle.extend(success)
-            episode_distance_cycle.extend(distance)
+            episode_distance_cycle.extend(distance.min(1))
 
         render = (config['render'] == 1) and (i_episode % config['render'] == 0) and (envs_render is not None)
         if render:
             for i_rollout in range(10):
                 _, _, _, _ = rollout(envs_render, model, False, config, normalizer=normalizer, render=render, 
-                                     step=(1,config['episode_length']))
+                                     step=(step_l_1, step_h_50))
         # <-- end loop: i_rollout 
             
         ### MONITORIRNG ###
