@@ -398,7 +398,7 @@ def run(model, experiment_args, train=True):
             for i_cycle in range(N_CYCLES):
                 
                 trajectories, episode_reward, success, distance = rollout(envs_train, model, noise, config, normalizer, render=False,
-                                                                   step=(1, obj_traj_step))
+                                                                   step=(obj_traj_step, obj_traj_step))
                 memory.store_episode(trajectories.copy())   
 
                 episode_reward_cycle_train.extend(episode_reward)
