@@ -64,10 +64,10 @@ elif exp_config['env'] == 'All':
 for env_name in env_name_list:
 
     if 'FetchPushObstacleDoubleGapMulti' in env_name:
-        n_episodes = 1#50
+        n_episodes = 50
         gamma = 0.9875
     else: 
-        n_episodes = 1#25
+        n_episodes = 25
         gamma = 0.98
 
     if env_name == 'FetchPushObstacleSideGapMulti-v1':
